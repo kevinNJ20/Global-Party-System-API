@@ -1,0 +1,132 @@
+#%RAML 1.0
+title: Global Party System API
+version: 1.0.0
+baseUri: http://localhost:8081/api/global/parties
+mediaType: application/json
+
+documentation:
+  - title: Overview
+    content: API système pour gérer les parties dans Global Data (copie dorée)
+
+types:
+  Party:
+    type: object
+    properties:
+      id?: string
+      globalId?: string
+      partyType: string
+      firstName?: string
+      lastName?: string
+      middleName?: string
+      organizationName?: string
+      dateOfBirth?: date-only
+      taxId?: string
+      externalIds?:
+        type: array
+        items:
+          type: object
+          properties:
+            system: string
+            value: string
+  ErrorResponse:
+    type: object
+    properties:
+      error:
+        type: object
+        properties:
+          code: string
+          message: string
+
+traits:
+  hasQueryParam:
+    queryParameters:
+      limit:
+        type: integer
+        required: false
+        default: 100
+      offset:
+        type: integer
+        required: false
+        default: 0
+
+/parties:
+  displayName: Global Parties
+  description: Opérations sur les parties dans Global Data
+  
+  get:
+    displayName: Get Parties
+    is: [hasQueryParam]
+    queryParameters:
+      globalId:
+        type: string
+        required: false
+      partyType:
+        type: string
+        required: false
+      lastName:
+        type: string
+        required: false
+    responses:
+      200:
+        body:
+          application/json:
+            type: Party[]
+      400:
+        body:
+          application/json:
+            type: ErrorResponse
+
+  post:
+    displayName: Upsert Party
+    body:
+      application/json:
+        type: Party
+    responses:
+      200:
+        body:
+          application/json:
+            type: Party
+      201:
+        body:
+          application/json:
+            type: Party
+
+  /{partyGlobalId}:
+    displayName: Party by Global ID
+    uriParameters:
+      partyGlobalId:
+        type: string
+    get:
+      displayName: Get Party by Global ID
+      responses:
+        200:
+          body:
+            application/json:
+              type: Party
+        404:
+          body:
+            application/json:
+              type: ErrorResponse
+
+  /lookup:
+    displayName: Lookup Party
+    post:
+      displayName: Lookup Party by External ID
+      body:
+        application/json:
+          type: object
+          properties:
+            externalId:
+              type: object
+              properties:
+                system: string
+                value: string
+      responses:
+        200:
+          body:
+            application/json:
+              type: Party
+        404:
+          body:
+            application/json:
+              type: ErrorResponse

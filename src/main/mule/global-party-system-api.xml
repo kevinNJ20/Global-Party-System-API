@@ -1,0 +1,490 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:db="http://www.mulesoft.org/schema/mule/db"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+      http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+  <!-- GET /parties - Business Logic Flow -->
+  <flow name="get-parties-business-logic" doc:name="get-parties-business-logic">
+    <try doc:name="Try">
+      <db:select doc:name="Select Parties" config-ref="Database_Config">
+        <db:sql><![CDATA[SELECT 
+  id, global_id, party_type, first_name, last_name, middle_name,
+  organization_name, date_of_birth, tax_id, created_at, updated_at
+FROM global_parties
+WHERE 
+  (:globalId IS NULL OR global_id::text = :globalId)
+  AND (:partyType IS NULL OR party_type = :partyType)
+  AND (:lastName IS NULL OR last_name ILIKE '%' || :lastName || '%')
+ORDER BY created_at DESC
+LIMIT (:limit)::integer OFFSET (:offset)::integer]]></db:sql>
+        <db:input-parameters><![CDATA[#[payload]]]></db:input-parameters>
+      </db:select>
+
+      <ee:transform doc:name="Store Parties">
+        <ee:variables>
+          <ee:set-variable variableName="parties"><![CDATA[#[payload]]]></ee:set-variable>
+        </ee:variables>
+      </ee:transform>
+
+      <foreach doc:name="Get External IDs for Each Party">
+        <db:select doc:name="Get External IDs" config-ref="Database_Config">
+          <db:sql><![CDATA[SELECT external_system, external_value
+FROM external_ids
+WHERE global_id = :globalId AND entity_type = 'party']]></db:sql>
+          <db:input-parameters><![CDATA[#[{globalId: payload.global_id}]]]></db:input-parameters>
+        </db:select>
+        <ee:transform doc:name="Add External IDs">
+          <ee:variables>
+            <ee:set-variable variableName="partyWithExternalIds"><![CDATA[%dw 2.0
+output application/java
+---
+payload[0] ++ {externalIds: payload}]]></ee:set-variable>
+          </ee:variables>
+        </ee:transform>
+      </foreach>
+
+      <ee:transform doc:name="Transform to Party Response">
+        <ee:message>
+          <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.parties map ((party) -> {
+  id: party.id,
+  globalId: party.global_id,
+  partyType: party.party_type,
+  firstName: party.first_name,
+  lastName: party.last_name,
+  middleName: party.middle_name,
+  organizationName: party.organization_name,
+  dateOfBirth: party.date_of_birth,
+  taxId: party.tax_id,
+  externalIds: (party.externalIds default []) map ((ext) -> {
+    system: ext.external_system,
+    value: ext.external_value
+  }),
+  createdAt: party.created_at,
+  updatedAt: party.updated_at
+})]]></ee:set-payload>
+        </ee:message>
+      </ee:transform>
+
+      <http:response statusCode="200" doc:name="HTTP Response"/>
+      
+      <error-handler>
+        <on-error-propagate type="DB:QUERY_EXECUTION,DB:CONNECTIVITY" enableNotifications="true" logException="true" doc:name="Database Error">
+          <ee:transform doc:name="Transform Error">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: {
+    code: "DATABASE_ERROR",
+    message: "An error occurred while querying the database",
+    timestamp: now()
+  }
+}]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
+          <http:response statusCode="500" doc:name="HTTP Response"/>
+        </on-error-propagate>
+      </error-handler>
+    </try>
+  </flow>
+
+  <!-- POST /parties - Business Logic Flow -->
+  <flow name="upsert-party-business-logic" doc:name="upsert-party-business-logic">
+    <ee:transform doc:name="Transform Request to DB Format">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+  global_id: payload.globalId default null,
+  party_type: payload.partyType,
+  first_name: payload.firstName default null,
+  last_name: payload.lastName default null,
+  middle_name: payload.middleName default null,
+  organization_name: payload.organizationName default null,
+  date_of_birth: payload.dateOfBirth default null,
+  tax_id: payload.taxId default null
+}]]></ee:set-payload>
+      </ee:message>
+      <ee:variables>
+        <ee:set-variable variableName="partyData"><![CDATA[#[payload]]]></ee:set-variable>
+        <ee:set-variable variableName="externalIds"><![CDATA[#[payload.externalIds default []]]></ee:set-variable>
+      </ee:variables>
+    </ee:transform>
+
+    <try doc:name="Try">
+      <choice doc:name="Upsert Strategy">
+        <when expression="#[vars.partyData.global_id != null]">
+          <db:update doc:name="Update Party by Global ID" config-ref="Database_Config">
+            <db:sql><![CDATA[UPDATE global_parties SET
+  party_type = :party_type,
+  first_name = :first_name,
+  last_name = :last_name,
+  middle_name = :middle_name,
+  organization_name = :organization_name,
+  date_of_birth = :date_of_birth,
+  tax_id = :tax_id,
+  updated_at = CURRENT_TIMESTAMP
+WHERE global_id = :global_id
+RETURNING id, global_id, party_type, first_name, last_name, middle_name,
+  organization_name, date_of_birth, tax_id, created_at, updated_at]]></db:sql>
+            <db:input-parameters><![CDATA[#[vars.payload]]]></db:input-parameters>
+          </db:update>
+        </when>
+        <when expression="#[sizeOf(vars.externalIds) > 0]">
+          <db:select doc:name="Lookup by External ID" config-ref="Database_Config">
+            <db:sql><![CDATA[SELECT gp.global_id
+FROM global_parties gp
+JOIN external_ids ei ON gp.global_id = ei.global_id
+WHERE ei.entity_type = 'party' 
+  AND ei.external_system = :system 
+  AND ei.external_value = :value
+LIMIT 1]]></db:sql>
+            <db:input-parameters><![CDATA[#[{
+              system: vars.externalIds[0].system,
+              value: vars.externalIds[0].value
+            }]]]></db:input-parameters>
+          </db:select>
+          <choice doc:name="Found?">
+            <when expression="#[sizeOf(payload) > 0]">
+              <ee:transform doc:name="Set Global ID">
+                <ee:variables>
+                  <ee:set-variable variableName="globalId"><![CDATA[#[payload[0].global_id]]]></ee:set-variable>
+                </ee:variables>
+              </ee:transform>
+              <db:update doc:name="Update Existing Party" config-ref="Database_Config">
+                <db:sql><![CDATA[UPDATE global_parties SET
+  party_type = :party_type,
+  first_name = :first_name,
+  last_name = :last_name,
+  middle_name = :middle_name,
+  organization_name = :organization_name,
+  date_of_birth = :date_of_birth,
+  tax_id = :tax_id,
+  updated_at = CURRENT_TIMESTAMP
+WHERE global_id = :global_id
+RETURNING id, global_id, party_type, first_name, last_name, middle_name,
+  organization_name, date_of_birth, tax_id, created_at, updated_at]]></db:sql>
+                <db:input-parameters><![CDATA[#[vars.partyData ++ {global_id: vars.globalId}]]]></db:input-parameters>
+              </db:update>
+            </when>
+            <otherwise>
+              <db:insert doc:name="Insert New Party" config-ref="Database_Config">
+                <db:sql><![CDATA[INSERT INTO global_parties (
+  party_type, first_name, last_name, middle_name, organization_name,
+  date_of_birth, tax_id, created_at, updated_at
+) VALUES (
+  :party_type, :first_name, :last_name, :middle_name, :organization_name,
+  :date_of_birth, :tax_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+)
+RETURNING id, global_id, party_type, first_name, last_name, middle_name,
+  organization_name, date_of_birth, tax_id, created_at, updated_at]]></db:sql>
+                <db:input-parameters><![CDATA[#[vars.partyData]]]></db:input-parameters>
+              </db:insert>
+            </otherwise>
+          </choice>
+        </when>
+        <otherwise>
+          <db:insert doc:name="Insert New Party" config-ref="Database_Config">
+            <db:sql><![CDATA[INSERT INTO global_parties (
+  party_type, first_name, last_name, middle_name, organization_name,
+  date_of_birth, tax_id, created_at, updated_at
+) VALUES (
+  :party_type, :first_name, :last_name, :middle_name, :organization_name,
+  :date_of_birth, :tax_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+)
+RETURNING id, global_id, party_type, first_name, last_name, middle_name,
+  organization_name, date_of_birth, tax_id, created_at, updated_at]]></db:sql>
+            <db:input-parameters><![CDATA[#[vars.payload]]]></db:input-parameters>
+          </db:insert>
+        </otherwise>
+      </choice>
+
+      <ee:transform doc:name="Store Party and Global ID">
+        <ee:variables>
+          <ee:set-variable variableName="party"><![CDATA[#[payload[0]]]></ee:set-variable>
+          <ee:set-variable variableName="globalId"><![CDATA[#[payload[0].global_id]]]></ee:set-variable>
+        </ee:variables>
+      </ee:transform>
+
+      <foreach doc:name="Upsert External IDs">
+        <db:insert config-ref="Database_Config">
+          <db:sql><![CDATA[INSERT INTO external_ids (global_id, entity_type, external_system, external_value)
+VALUES (:globalId, 'party', :system, :value)
+ON CONFLICT (external_system, external_value, entity_type) 
+DO UPDATE SET global_id = :globalId]]></db:sql>
+          <db:input-parameters><![CDATA[#[{
+            globalId: vars.globalId,
+            system: payload.system,
+            value: payload.value
+          }]]]></db:input-parameters>
+        </db:insert>
+      </foreach>
+
+      <db:select doc:name="Get External IDs" config-ref="Database_Config">
+        <db:sql><![CDATA[SELECT external_system, external_value
+FROM external_ids
+WHERE global_id = :globalId AND entity_type = 'party']]></db:sql>
+        <db:input-parameters><![CDATA[#[{globalId: vars.globalId}]]]></db:input-parameters>
+      </db:select>
+
+      <ee:transform doc:name="Transform Response">
+        <ee:message>
+          <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var party = vars.party
+var externalIds = payload
+---
+{
+  id: party.id,
+  globalId: party.global_id,
+  partyType: party.party_type,
+  firstName: party.first_name,
+  lastName: party.last_name,
+  middleName: party.middle_name,
+  organizationName: party.organization_name,
+  dateOfBirth: party.date_of_birth,
+  taxId: party.tax_id,
+  externalIds: externalIds map ((ext) -> {
+    system: ext.external_system,
+    value: ext.external_value
+  }),
+  createdAt: party.created_at,
+  updatedAt: party.updated_at
+}]]></ee:set-payload>
+        </ee:message>
+      </ee:transform>
+
+      <http:response statusCode="#[vars.globalId == null ? 201 : 200]" doc:name="HTTP Response"/>
+      
+      <error-handler>
+        <on-error-propagate type="DB:QUERY_EXECUTION,DB:CONNECTIVITY" enableNotifications="true" logException="true" doc:name="Database Error">
+          <ee:transform doc:name="Transform Error">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: {
+    code: "DATABASE_ERROR",
+    message: "An error occurred while upserting the party",
+    timestamp: now()
+  }
+}]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
+          <http:response statusCode="500" doc:name="HTTP Response"/>
+        </on-error-propagate>
+      </error-handler>
+    </try>
+  </flow>
+
+  <!-- GET /parties/{partyGlobalId} - Business Logic Flow -->
+  <flow name="get-party-by-global-id-business-logic" doc:name="get-party-by-global-id-business-logic">
+    <try doc:name="Try">
+      <db:select doc:name="Select Party by Global ID" config-ref="Database_Config">
+        <db:sql><![CDATA[SELECT 
+  id, global_id, party_type, first_name, last_name, middle_name,
+  organization_name, date_of_birth, tax_id, created_at, updated_at
+FROM global_parties
+WHERE global_id = :partyGlobalId]]></db:sql>
+        <db:input-parameters><![CDATA[#[{partyGlobalId: vars.partyGlobalId}]]]></db:input-parameters>
+      </db:select>
+
+      <choice doc:name="Party Found?">
+        <when expression="#[sizeOf(payload) > 0]">
+          <ee:transform doc:name="Store Party">
+            <ee:variables>
+              <ee:set-variable variableName="party"><![CDATA[#[payload[0]]]></ee:set-variable>
+            </ee:variables>
+          </ee:transform>
+
+          <db:select doc:name="Get External IDs" config-ref="Database_Config">
+            <db:sql><![CDATA[SELECT external_system, external_value
+FROM external_ids
+WHERE global_id = :globalId AND entity_type = 'party']]></db:sql>
+            <db:input-parameters><![CDATA[#[{globalId: vars.party.global_id}]]]></db:input-parameters>
+          </db:select>
+
+          <ee:transform doc:name="Transform Response">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var party = vars.party
+var externalIds = payload
+---
+{
+  id: party.id,
+  globalId: party.global_id,
+  partyType: party.party_type,
+  firstName: party.first_name,
+  lastName: party.last_name,
+  middleName: party.middle_name,
+  organizationName: party.organization_name,
+  dateOfBirth: party.date_of_birth,
+  taxId: party.tax_id,
+  externalIds: externalIds map ((ext) -> {
+    system: ext.external_system,
+    value: ext.external_value
+  }),
+  createdAt: party.created_at,
+  updatedAt: party.updated_at
+}]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
+          <http:response statusCode="200" doc:name="HTTP Response"/>
+        </when>
+        <otherwise>
+          <ee:transform doc:name="Error Response">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: {
+    code: "NOT_FOUND",
+    message: "Party not found",
+    timestamp: now()
+  }
+}]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
+          <http:response statusCode="404" doc:name="HTTP Response"/>
+        </otherwise>
+      </choice>
+      
+      <error-handler>
+        <on-error-propagate type="DB:QUERY_EXECUTION,DB:CONNECTIVITY" enableNotifications="true" logException="true" doc:name="Database Error">
+          <ee:transform doc:name="Transform Error">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: {
+    code: "DATABASE_ERROR",
+    message: "An error occurred while querying the database",
+    timestamp: now()
+  }
+}]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
+          <http:response statusCode="500" doc:name="HTTP Response"/>
+        </on-error-propagate>
+      </error-handler>
+    </try>
+  </flow>
+
+  <!-- POST /parties/lookup - Business Logic Flow -->
+  <flow name="lookup-party-business-logic" doc:name="lookup-party-business-logic">
+    <try doc:name="Try">
+      <db:select doc:name="Lookup Party by External ID" config-ref="Database_Config">
+        <db:sql><![CDATA[SELECT 
+  gp.id, gp.global_id, gp.party_type, gp.first_name, gp.last_name, gp.middle_name,
+  gp.organization_name, gp.date_of_birth, gp.tax_id, gp.created_at, gp.updated_at
+FROM global_parties gp
+JOIN external_ids ei ON gp.global_id = ei.global_id
+WHERE ei.entity_type = 'party' 
+  AND ei.external_system = :system 
+  AND ei.external_value = :value
+LIMIT 1]]></db:sql>
+        <db:input-parameters><![CDATA[#[{
+          system: payload.externalId.system,
+          value: payload.externalId.value
+        }]]]></db:input-parameters>
+      </db:select>
+
+      <choice doc:name="Party Found?">
+        <when expression="#[sizeOf(payload) > 0]">
+          <ee:transform doc:name="Store Party">
+            <ee:variables>
+              <ee:set-variable variableName="party"><![CDATA[#[payload[0]]]></ee:set-variable>
+            </ee:variables>
+          </ee:transform>
+
+          <db:select doc:name="Get External IDs" config-ref="Database_Config">
+            <db:sql><![CDATA[SELECT external_system, external_value
+FROM external_ids
+WHERE global_id = :globalId AND entity_type = 'party']]></db:sql>
+            <db:input-parameters><![CDATA[#[{globalId: vars.party.global_id}]]]></db:input-parameters>
+          </db:select>
+
+          <ee:transform doc:name="Transform Response">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var party = vars.party
+var externalIds = payload
+---
+{
+  id: party.id,
+  globalId: party.global_id,
+  partyType: party.party_type,
+  firstName: party.first_name,
+  lastName: party.last_name,
+  middleName: party.middle_name,
+  organizationName: party.organization_name,
+  dateOfBirth: party.date_of_birth,
+  taxId: party.tax_id,
+  externalIds: externalIds map ((ext) -> {
+    system: ext.external_system,
+    value: ext.external_value
+  }),
+  createdAt: party.created_at,
+  updatedAt: party.updated_at
+}]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
+          <http:response statusCode="200" doc:name="HTTP Response"/>
+        </when>
+        <otherwise>
+          <ee:transform doc:name="Error Response">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: {
+    code: "NOT_FOUND",
+    message: "Party not found for the given external ID",
+    timestamp: now()
+  }
+}]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
+          <http:response statusCode="404" doc:name="HTTP Response"/>
+        </otherwise>
+      </choice>
+      
+      <error-handler>
+        <on-error-propagate type="DB:QUERY_EXECUTION,DB:CONNECTIVITY" enableNotifications="true" logException="true" doc:name="Database Error">
+          <ee:transform doc:name="Transform Error">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: {
+    code: "DATABASE_ERROR",
+    message: "An error occurred while looking up the party",
+    timestamp: now()
+  }
+}]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
+          <http:response statusCode="500" doc:name="HTTP Response"/>
+        </on-error-propagate>
+      </error-handler>
+    </try>
+  </flow>
+
+</mule>
