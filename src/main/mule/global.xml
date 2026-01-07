@@ -27,5 +27,7 @@
       password="${supabase.db.password}">
     </db:generic-connection>
   </db:config>
+	<global-property doc:name="Global Property" doc:id="46e78b88-87cb-4891-b1ff-aac9f7ba55e2" name="exchange.maven.restConnect.skip" value="true" />
+
 
 </mule>
