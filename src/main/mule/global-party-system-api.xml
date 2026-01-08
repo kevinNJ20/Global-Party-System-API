@@ -11,19 +11,45 @@
   <!-- GET /parties - Business Logic Flow -->
   <flow name="get-parties-business-logic" doc:name="get-parties-business-logic">
     <try doc:name="Try">
-      <db:select doc:name="Select Parties" config-ref="Database_Config">
-        <db:sql><![CDATA[SELECT 
-  id, global_id, party_type, first_name, last_name, middle_name,
-  organization_name, date_of_birth, tax_id, created_at, updated_at
-FROM global_parties
-WHERE 
-  (:globalId IS NULL OR global_id::text = :globalId)
-  AND (:partyType IS NULL OR party_type = :partyType)
-  AND (:lastName IS NULL OR last_name ILIKE '%' || :lastName || '%')
-ORDER BY created_at DESC
-LIMIT (:limit)::integer OFFSET (:offset)::integer]]></db:sql>
-        <db:input-parameters><![CDATA[#[payload]]]></db:input-parameters>
-      </db:select>
+      <!-- MOCK: Remplacement de l'appel DB par des données mockées -->
+      <ee:transform doc:name="Mock Select Parties" doc:id="mock-select-parties">
+        <ee:message>
+          <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var params = payload
+var limit = params.limit as Number default 200
+var offset = params.offset as Number default 0
+---
+[
+  {
+    id: 1,
+    global_id: "550e8400-e29b-41d4-a716-446655440000",
+    party_type: "Individual",
+    first_name: "Jean",
+    last_name: "Dupont",
+    middle_name: null,
+    organization_name: null,
+    date_of_birth: "1980-01-15",
+    tax_id: "123456789",
+    created_at: "2024-01-01T10:00:00Z",
+    updated_at: "2024-01-01T10:00:00Z"
+  },
+  {
+    id: 2,
+    global_id: "550e8400-e29b-41d4-a716-446655440001",
+    party_type: "Organization",
+    first_name: null,
+    last_name: null,
+    middle_name: null,
+    organization_name: "Acme Corp",
+    date_of_birth: null,
+    tax_id: "987654321",
+    created_at: "2024-01-02T10:00:00Z",
+    updated_at: "2024-01-02T10:00:00Z"
+  }
+] default []]]></ee:set-payload>
+        </ee:message>
+      </ee:transform>
 
       <ee:transform doc:name="Store Parties">
         <ee:variables>
@@ -32,12 +58,24 @@ LIMIT (:limit)::integer OFFSET (:offset)::integer]]></db:sql>
       </ee:transform>
 
       <foreach doc:name="Get External IDs for Each Party">
-        <db:select doc:name="Get External IDs" config-ref="Database_Config">
-          <db:sql><![CDATA[SELECT external_system, external_value
-FROM external_ids
-WHERE global_id = :globalId AND entity_type = 'party']]></db:sql>
-          <db:input-parameters><![CDATA[#[{globalId: payload.global_id}]]]></db:input-parameters>
-        </db:select>
+        <!-- MOCK: Remplacement de l'appel DB par des données mockées -->
+        <ee:transform doc:name="Mock Get External IDs" doc:id="mock-get-external-ids">
+          <ee:message>
+            <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+[
+  {
+    external_system: "Salesforce",
+    external_value: payload.global_id ++ "-SF"
+  },
+  {
+    external_system: "CoreBanking",
+    external_value: payload.global_id ++ "-CB"
+  }
+] default []]]></ee:set-payload>
+          </ee:message>
+        </ee:transform>
         <ee:transform doc:name="Add External IDs">
           <ee:variables>
             <ee:set-variable variableName="partyWithExternalIds"><![CDATA[%dw 2.0
@@ -125,36 +163,41 @@ output application/java
     <try doc:name="Try">
       <choice doc:name="Upsert Strategy">
         <when expression="#[vars.partyData.global_id != null]">
-          <db:update doc:name="Update Party by Global ID" config-ref="Database_Config">
-            <db:sql><![CDATA[UPDATE global_parties SET
-  party_type = :party_type,
-  first_name = :first_name,
-  last_name = :last_name,
-  middle_name = :middle_name,
-  organization_name = :organization_name,
-  date_of_birth = :date_of_birth,
-  tax_id = :tax_id,
-  updated_at = CURRENT_TIMESTAMP
-WHERE global_id = :global_id
-RETURNING id, global_id, party_type, first_name, last_name, middle_name,
-  organization_name, date_of_birth, tax_id, created_at, updated_at]]></db:sql>
-            <db:input-parameters><![CDATA[#[vars.payload]]]></db:input-parameters>
-          </db:update>
+          <!-- MOCK: Remplacement de l'appel DB update par des données mockées -->
+          <ee:transform doc:name="Mock Update Party by Global ID" doc:id="mock-update-party">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var data = vars.partyData
+---
+[{
+  id: 1,
+  global_id: data.global_id,
+  party_type: data.party_type,
+  first_name: data.first_name,
+  last_name: data.last_name,
+  middle_name: data.middle_name,
+  organization_name: data.organization_name,
+  date_of_birth: data.date_of_birth,
+  tax_id: data.tax_id,
+  created_at: "2024-01-01T10:00:00Z",
+  updated_at: now()
+}]]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
         </when>
         <when expression="#[sizeOf(vars.externalIds) > 0]">
-          <db:select doc:name="Lookup by External ID" config-ref="Database_Config">
-            <db:sql><![CDATA[SELECT gp.global_id
-FROM global_parties gp
-JOIN external_ids ei ON gp.global_id = ei.global_id
-WHERE ei.entity_type = 'party' 
-  AND ei.external_system = :system 
-  AND ei.external_value = :value
-LIMIT 1]]></db:sql>
-            <db:input-parameters><![CDATA[#[{
-              system: vars.externalIds[0].system,
-              value: vars.externalIds[0].value
-            }]]]></db:input-parameters>
-          </db:select>
+          <!-- MOCK: Remplacement de l'appel DB select par des données mockées -->
+          <ee:transform doc:name="Mock Lookup by External ID" doc:id="mock-lookup-external-id">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+[{
+  global_id: "550e8400-e29b-41d4-a716-446655440000"
+}]]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
           <choice doc:name="Found?">
             <when expression="#[sizeOf(payload) > 0]">
               <ee:transform doc:name="Set Global ID">
@@ -162,51 +205,78 @@ LIMIT 1]]></db:sql>
                   <ee:set-variable variableName="globalId"><![CDATA[#[payload[0].global_id]]]></ee:set-variable>
                 </ee:variables>
               </ee:transform>
-              <db:update doc:name="Update Existing Party" config-ref="Database_Config">
-                <db:sql><![CDATA[UPDATE global_parties SET
-  party_type = :party_type,
-  first_name = :first_name,
-  last_name = :last_name,
-  middle_name = :middle_name,
-  organization_name = :organization_name,
-  date_of_birth = :date_of_birth,
-  tax_id = :tax_id,
-  updated_at = CURRENT_TIMESTAMP
-WHERE global_id = :global_id
-RETURNING id, global_id, party_type, first_name, last_name, middle_name,
-  organization_name, date_of_birth, tax_id, created_at, updated_at]]></db:sql>
-                <db:input-parameters><![CDATA[#[vars.partyData ++ {global_id: vars.globalId}]]]></db:input-parameters>
-              </db:update>
+              <!-- MOCK: Remplacement de l'appel DB update par des données mockées -->
+              <ee:transform doc:name="Mock Update Existing Party" doc:id="mock-update-existing-party">
+                <ee:message>
+                  <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var data = vars.partyData
+---
+[{
+  id: 1,
+  global_id: vars.globalId,
+  party_type: data.party_type,
+  first_name: data.first_name,
+  last_name: data.last_name,
+  middle_name: data.middle_name,
+  organization_name: data.organization_name,
+  date_of_birth: data.date_of_birth,
+  tax_id: data.tax_id,
+  created_at: "2024-01-01T10:00:00Z",
+  updated_at: now()
+}]]]></ee:set-payload>
+                </ee:message>
+              </ee:transform>
             </when>
             <otherwise>
-              <db:insert doc:name="Insert New Party" config-ref="Database_Config">
-                <db:sql><![CDATA[INSERT INTO global_parties (
-  party_type, first_name, last_name, middle_name, organization_name,
-  date_of_birth, tax_id, created_at, updated_at
-) VALUES (
-  :party_type, :first_name, :last_name, :middle_name, :organization_name,
-  :date_of_birth, :tax_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-)
-RETURNING id, global_id, party_type, first_name, last_name, middle_name,
-  organization_name, date_of_birth, tax_id, created_at, updated_at]]></db:sql>
-                <db:input-parameters><![CDATA[#[vars.partyData]]]></db:input-parameters>
-              </db:insert>
+              <!-- MOCK: Remplacement de l'appel DB insert par des données mockées -->
+              <ee:transform doc:name="Mock Insert New Party" doc:id="mock-insert-party">
+                <ee:message>
+                  <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var data = vars.partyData
+---
+[{
+  id: 1,
+  global_id: "550e8400-e29b-41d4-a716-446655440000",
+  party_type: data.party_type,
+  first_name: data.first_name,
+  last_name: data.last_name,
+  middle_name: data.middle_name,
+  organization_name: data.organization_name,
+  date_of_birth: data.date_of_birth,
+  tax_id: data.tax_id,
+  created_at: now(),
+  updated_at: now()
+}]]]></ee:set-payload>
+                </ee:message>
+              </ee:transform>
             </otherwise>
           </choice>
         </when>
         <otherwise>
-          <db:insert doc:name="Insert New Party" config-ref="Database_Config">
-            <db:sql><![CDATA[INSERT INTO global_parties (
-  party_type, first_name, last_name, middle_name, organization_name,
-  date_of_birth, tax_id, created_at, updated_at
-) VALUES (
-  :party_type, :first_name, :last_name, :middle_name, :organization_name,
-  :date_of_birth, :tax_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-)
-RETURNING id, global_id, party_type, first_name, last_name, middle_name,
-  organization_name, date_of_birth, tax_id, created_at, updated_at]]></db:sql>
-            <db:input-parameters><![CDATA[#[vars.payload]]]></db:input-parameters>
-          </db:insert>
+          <!-- MOCK: Remplacement de l'appel DB insert par des données mockées -->
+          <ee:transform doc:name="Mock Insert New Party" doc:id="mock-insert-party-2">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var data = vars.payload
+---
+[{
+  id: 1,
+  global_id: "550e8400-e29b-41d4-a716-446655440000",
+  party_type: data.party_type,
+  first_name: data.first_name,
+  last_name: data.last_name,
+  middle_name: data.middle_name,
+  organization_name: data.organization_name,
+  date_of_birth: data.date_of_birth,
+  tax_id: data.tax_id,
+  created_at: now(),
+  updated_at: now()
+}]]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
         </otherwise>
       </choice>
 
@@ -218,25 +288,37 @@ RETURNING id, global_id, party_type, first_name, last_name, middle_name,
       </ee:transform>
 
       <foreach doc:name="Upsert External IDs">
-        <db:insert config-ref="Database_Config">
-          <db:sql><![CDATA[INSERT INTO external_ids (global_id, entity_type, external_system, external_value)
-VALUES (:globalId, 'party', :system, :value)
-ON CONFLICT (external_system, external_value, entity_type) 
-DO UPDATE SET global_id = :globalId]]></db:sql>
-          <db:input-parameters><![CDATA[#[{
-            globalId: vars.globalId,
-            system: payload.system,
-            value: payload.value
-          }]]]></db:input-parameters>
-        </db:insert>
+        <!-- MOCK: Remplacement de l'appel DB insert par des données mockées -->
+        <ee:transform doc:name="Mock Insert External ID" doc:id="mock-insert-external-id">
+          <ee:message>
+            <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+  success: true
+}]]></ee:set-payload>
+          </ee:message>
+        </ee:transform>
       </foreach>
 
-      <db:select doc:name="Get External IDs" config-ref="Database_Config">
-        <db:sql><![CDATA[SELECT external_system, external_value
-FROM external_ids
-WHERE global_id = :globalId AND entity_type = 'party']]></db:sql>
-        <db:input-parameters><![CDATA[#[{globalId: vars.globalId}]]]></db:input-parameters>
-      </db:select>
+      <!-- MOCK: Remplacement de l'appel DB select par des données mockées -->
+      <ee:transform doc:name="Mock Get External IDs" doc:id="mock-get-external-ids-2">
+        <ee:message>
+          <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+[
+  {
+    external_system: "Salesforce",
+    external_value: vars.globalId ++ "-SF"
+  },
+  {
+    external_system: "CoreBanking",
+    external_value: vars.globalId ++ "-CB"
+  }
+] default []]]></ee:set-payload>
+        </ee:message>
+      </ee:transform>
 
       <ee:transform doc:name="Transform Response">
         <ee:message>
@@ -292,14 +374,28 @@ output application/json
   <!-- GET /parties/{partyGlobalId} - Business Logic Flow -->
   <flow name="get-party-by-global-id-business-logic" doc:name="get-party-by-global-id-business-logic">
     <try doc:name="Try">
-      <db:select doc:name="Select Party by Global ID" config-ref="Database_Config">
-        <db:sql><![CDATA[SELECT 
-  id, global_id, party_type, first_name, last_name, middle_name,
-  organization_name, date_of_birth, tax_id, created_at, updated_at
-FROM global_parties
-WHERE global_id = :partyGlobalId]]></db:sql>
-        <db:input-parameters><![CDATA[#[{partyGlobalId: vars.partyGlobalId}]]]></db:input-parameters>
-      </db:select>
+      <!-- MOCK: Remplacement de l'appel DB select par des données mockées -->
+      <ee:transform doc:name="Mock Select Party by Global ID" doc:id="mock-select-party-by-id">
+        <ee:message>
+          <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var globalId = vars.partyGlobalId default "550e8400-e29b-41d4-a716-446655440000"
+---
+[{
+  id: 1,
+  global_id: globalId,
+  party_type: "Individual",
+  first_name: "Jean",
+  last_name: "Dupont",
+  middle_name: null,
+  organization_name: null,
+  date_of_birth: "1980-01-15",
+  tax_id: "123456789",
+  created_at: "2024-01-01T10:00:00Z",
+  updated_at: "2024-01-01T10:00:00Z"
+}] default []]]></ee:set-payload>
+        </ee:message>
+      </ee:transform>
 
       <choice doc:name="Party Found?">
         <when expression="#[sizeOf(payload) > 0]">
@@ -309,12 +405,24 @@ WHERE global_id = :partyGlobalId]]></db:sql>
             </ee:variables>
           </ee:transform>
 
-          <db:select doc:name="Get External IDs" config-ref="Database_Config">
-            <db:sql><![CDATA[SELECT external_system, external_value
-FROM external_ids
-WHERE global_id = :globalId AND entity_type = 'party']]></db:sql>
-            <db:input-parameters><![CDATA[#[{globalId: vars.party.global_id}]]]></db:input-parameters>
-          </db:select>
+          <!-- MOCK: Remplacement de l'appel DB select par des données mockées -->
+          <ee:transform doc:name="Mock Get External IDs" doc:id="mock-get-external-ids-3">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+[
+  {
+    external_system: "Salesforce",
+    external_value: vars.party.global_id ++ "-SF"
+  },
+  {
+    external_system: "CoreBanking",
+    external_value: vars.party.global_id ++ "-CB"
+  }
+] default []]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
 
           <ee:transform doc:name="Transform Response">
             <ee:message>
@@ -390,21 +498,27 @@ output application/json
   <!-- POST /parties/lookup - Business Logic Flow -->
   <flow name="lookup-party-business-logic" doc:name="lookup-party-business-logic">
     <try doc:name="Try">
-      <db:select doc:name="Lookup Party by External ID" config-ref="Database_Config">
-        <db:sql><![CDATA[SELECT 
-  gp.id, gp.global_id, gp.party_type, gp.first_name, gp.last_name, gp.middle_name,
-  gp.organization_name, gp.date_of_birth, gp.tax_id, gp.created_at, gp.updated_at
-FROM global_parties gp
-JOIN external_ids ei ON gp.global_id = ei.global_id
-WHERE ei.entity_type = 'party' 
-  AND ei.external_system = :system 
-  AND ei.external_value = :value
-LIMIT 1]]></db:sql>
-        <db:input-parameters><![CDATA[#[{
-          system: payload.externalId.system,
-          value: payload.externalId.value
-        }]]]></db:input-parameters>
-      </db:select>
+      <!-- MOCK: Remplacement de l'appel DB select par des données mockées -->
+      <ee:transform doc:name="Mock Lookup Party by External ID" doc:id="mock-lookup-party-external-id">
+        <ee:message>
+          <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+[{
+  id: 1,
+  global_id: "550e8400-e29b-41d4-a716-446655440000",
+  party_type: "Individual",
+  first_name: "Jean",
+  last_name: "Dupont",
+  middle_name: null,
+  organization_name: null,
+  date_of_birth: "1980-01-15",
+  tax_id: "123456789",
+  created_at: "2024-01-01T10:00:00Z",
+  updated_at: "2024-01-01T10:00:00Z"
+}] default []]]></ee:set-payload>
+        </ee:message>
+      </ee:transform>
 
       <choice doc:name="Party Found?">
         <when expression="#[sizeOf(payload) > 0]">
@@ -414,12 +528,24 @@ LIMIT 1]]></db:sql>
             </ee:variables>
           </ee:transform>
 
-          <db:select doc:name="Get External IDs" config-ref="Database_Config">
-            <db:sql><![CDATA[SELECT external_system, external_value
-FROM external_ids
-WHERE global_id = :globalId AND entity_type = 'party']]></db:sql>
-            <db:input-parameters><![CDATA[#[{globalId: vars.party.global_id}]]]></db:input-parameters>
-          </db:select>
+          <!-- MOCK: Remplacement de l'appel DB select par des données mockées -->
+          <ee:transform doc:name="Mock Get External IDs" doc:id="mock-get-external-ids-4">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+[
+  {
+    external_system: "Salesforce",
+    external_value: vars.party.global_id ++ "-SF"
+  },
+  {
+    external_system: "CoreBanking",
+    external_value: vars.party.global_id ++ "-CB"
+  }
+] default []]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
 
           <ee:transform doc:name="Transform Response">
             <ee:message>
