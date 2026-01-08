@@ -111,13 +111,8 @@ output application/java
 }]]></ee:set-payload>
       </ee:message>
       <ee:variables>
-        <ee:set-variable variableName="partyData"><![CDATA[%dw 2.0
-output application/java
---- payload]]></ee:set-variable>
-        <ee:set-variable variableName="externalIds"><![CDATA[%dw 2.0
-output application/java
----
-payload.externalIds default []]]></ee:set-variable>
+        <ee:set-variable variableName="partyData"><![CDATA[#[payload]]]></ee:set-variable>
+        <ee:set-variable variableName="externalIds"><![CDATA[#[payload.externalIds default []]]></ee:set-variable>
       </ee:variables>
     </ee:transform>
 
@@ -145,13 +140,8 @@ var globalId = req.global_id default ("party-global-" ++ (now() as String {forma
 }]]]></ee:set-payload>
         </ee:message>
         <ee:variables>
-          <ee:set-variable variableName="party"><![CDATA[%dw 2.0
-output application/java
----
-payload[0]]]></ee:set-variable>
-          <ee:set-variable variableName="globalId"><![CDATA[%dw 2.0
-output application/java
---- payload[0].global_id]]></ee:set-variable>
+          <ee:set-variable variableName="party"><![CDATA[#[payload[0]]]></ee:set-variable>
+          <ee:set-variable variableName="globalId"><![CDATA[#[payload[0].global_id]]]></ee:set-variable>
         </ee:variables>
       </ee:transform>
 
@@ -202,7 +192,7 @@ var externalIds = payload
         </ee:message>
       </ee:transform>
 
-      <set-variable value="#[if(vars.globalId == null) 201 else 200]" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
+      <set-variable value="#[vars.globalId == null ? 201 : 200]" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
       
       <error-handler>
         <on-error-propagate type="*" enableNotifications="true" logException="true" doc:name="Error Handler">
@@ -259,9 +249,7 @@ else
         <when expression="#[sizeOf(payload) > 0]">
           <ee:transform doc:name="Store Party">
             <ee:variables>
-              <ee:set-variable variableName="party"><![CDATA[%dw 2.0
-output application/java
---- payload[0]]]></ee:set-variable>
+              <ee:set-variable variableName="party"><![CDATA[#[payload[0]]]></ee:set-variable>
             </ee:variables>
           </ee:transform>
 
@@ -380,9 +368,7 @@ else
         <when expression="#[sizeOf(payload) > 0]">
           <ee:transform doc:name="Store Party">
             <ee:variables>
-              <ee:set-variable variableName="party"><![CDATA[%dw 2.0
-output application/java
---- payload[0]]]></ee:set-variable>
+              <ee:set-variable variableName="party"><![CDATA[#[payload[0]]]></ee:set-variable>
             </ee:variables>
           </ee:transform>
 
