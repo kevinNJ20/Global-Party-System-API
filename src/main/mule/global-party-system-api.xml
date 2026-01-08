@@ -1,90 +1,47 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <mule xmlns="http://www.mulesoft.org/schema/mule/core"
-  xmlns:db="http://www.mulesoft.org/schema/mule/db"
   xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
   xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
       xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-      http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
-      http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+      http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+	http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
 
   <!-- GET /parties - Business Logic Flow -->
   <flow name="get-parties-business-logic" doc:name="get-parties-business-logic">
     <try doc:name="Try">
-      <!-- MOCK: Remplacement de l'appel DB par des données mockées -->
-      <ee:transform doc:name="Mock Select Parties" doc:id="mock-select-parties">
+      <ee:transform doc:name="Mock Select Parties with External IDs">
         <ee:message>
           <ee:set-payload><![CDATA[%dw 2.0
 output application/java
-var params = payload
-var limit = params.limit as Number default 200
-var offset = params.offset as Number default 0
+var params = payload default {}
 ---
+// Mock data - simulating database query results with external IDs
 [
   {
     id: 1,
-    global_id: "550e8400-e29b-41d4-a716-446655440000",
-    party_type: "Individual",
-    first_name: "Jean",
-    last_name: "Dupont",
+    global_id: params.globalId default "party-global-001",
+    party_type: params.partyType default "Individual",
+    first_name: "John",
+    last_name: params.lastName default "Doe",
     middle_name: null,
     organization_name: null,
-    date_of_birth: "1980-01-15",
-    tax_id: "123456789",
-    created_at: "2024-01-01T10:00:00Z",
-    updated_at: "2024-01-01T10:00:00Z"
-  },
-  {
-    id: 2,
-    global_id: "550e8400-e29b-41d4-a716-446655440001",
-    party_type: "Organization",
-    first_name: null,
-    last_name: null,
-    middle_name: null,
-    organization_name: "Acme Corp",
-    date_of_birth: null,
-    tax_id: "987654321",
-    created_at: "2024-01-02T10:00:00Z",
-    updated_at: "2024-01-02T10:00:00Z"
+    date_of_birth: "1990-01-15" as Date,
+    tax_id: "TAX-123456",
+    externalIds: [{
+      external_system: "Salesforce",
+      external_value: "SF-001"
+    }],
+    created_at: "2024-01-15T00:00:00Z" as DateTime,
+    updated_at: "2024-01-20T00:00:00Z" as DateTime
   }
 ] default []]]></ee:set-payload>
         </ee:message>
-      </ee:transform>
-
-      <ee:transform doc:name="Store Parties">
         <ee:variables>
           <ee:set-variable variableName="parties"><![CDATA[#[payload]]]></ee:set-variable>
         </ee:variables>
       </ee:transform>
-
-      <foreach doc:name="Get External IDs for Each Party">
-        <!-- MOCK: Remplacement de l'appel DB par des données mockées -->
-        <ee:transform doc:name="Mock Get External IDs" doc:id="mock-get-external-ids">
-          <ee:message>
-            <ee:set-payload><![CDATA[%dw 2.0
-output application/java
----
-[
-  {
-    external_system: "Salesforce",
-    external_value: payload.global_id ++ "-SF"
-  },
-  {
-    external_system: "CoreBanking",
-    external_value: payload.global_id ++ "-CB"
-  }
-] default []]]></ee:set-payload>
-          </ee:message>
-        </ee:transform>
-        <ee:transform doc:name="Add External IDs">
-          <ee:variables>
-            <ee:set-variable variableName="partyWithExternalIds"><![CDATA[%dw 2.0
-output application/java
----
-payload[0] ++ {externalIds: payload}]]></ee:set-variable>
-          </ee:variables>
-        </ee:transform>
-      </foreach>
 
       <ee:transform doc:name="Transform to Party Response">
         <ee:message>
@@ -111,10 +68,10 @@ vars.parties map ((party) -> {
         </ee:message>
       </ee:transform>
 
-      <set-variable value="200" doc:name="httpStatus" doc:id="a976d59c-bc95-4b80-83b7-f89e670f8d1e" variableName="httpStatus"/>
+      <set-variable value="200" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
       
       <error-handler>
-        <on-error-propagate type="DB:QUERY_EXECUTION,DB:CONNECTIVITY" enableNotifications="true" logException="true" doc:name="Database Error">
+        <on-error-propagate type="*" enableNotifications="true" logException="true" doc:name="Error Handler">
           <ee:transform doc:name="Transform Error">
             <ee:message>
               <ee:set-payload><![CDATA[%dw 2.0
@@ -129,9 +86,8 @@ output application/json
 }]]></ee:set-payload>
             </ee:message>
           </ee:transform>
-					<set-variable value="500" doc:name="httpStatus" doc:id="94877695-e83c-4bed-8640-1d711b0885ce" variableName="httpStatus"/>
-        
-</on-error-propagate>
+          <set-variable value="500" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
+        </on-error-propagate>
       </error-handler>
     </try>
   </flow>
@@ -161,162 +117,51 @@ output application/java
     </ee:transform>
 
     <try doc:name="Try">
-      <choice doc:name="Upsert Strategy">
-        <when expression="#[vars.partyData.global_id != null]">
-          <!-- MOCK: Remplacement de l'appel DB update par des données mockées -->
-          <ee:transform doc:name="Mock Update Party by Global ID" doc:id="mock-update-party">
-            <ee:message>
-              <ee:set-payload><![CDATA[%dw 2.0
+      <ee:transform doc:name="Mock Upsert Party">
+        <ee:message>
+          <ee:set-payload><![CDATA[%dw 2.0
 output application/java
-var data = vars.partyData
+var req = vars.partyData
+var globalId = req.global_id default ("party-global-" ++ (now() as String {format: "yyyyMMddHHmmssSSS"}))
 ---
+// Mock upsert - return party with global_id
 [{
   id: 1,
-  global_id: data.global_id,
-  party_type: data.party_type,
-  first_name: data.first_name,
-  last_name: data.last_name,
-  middle_name: data.middle_name,
-  organization_name: data.organization_name,
-  date_of_birth: data.date_of_birth,
-  tax_id: data.tax_id,
-  created_at: "2024-01-01T10:00:00Z",
-  updated_at: now()
-}]]]></ee:set-payload>
-            </ee:message>
-          </ee:transform>
-        </when>
-        <when expression="#[sizeOf(vars.externalIds) > 0]">
-          <!-- MOCK: Remplacement de l'appel DB select par des données mockées -->
-          <ee:transform doc:name="Mock Lookup by External ID" doc:id="mock-lookup-external-id">
-            <ee:message>
-              <ee:set-payload><![CDATA[%dw 2.0
-output application/java
----
-[{
-  global_id: "550e8400-e29b-41d4-a716-446655440000"
-}]]]></ee:set-payload>
-            </ee:message>
-          </ee:transform>
-          <choice doc:name="Found?">
-            <when expression="#[sizeOf(payload) > 0]">
-              <ee:transform doc:name="Set Global ID">
-                <ee:variables>
-                  <ee:set-variable variableName="globalId"><![CDATA[#[payload[0].global_id]]]></ee:set-variable>
-                </ee:variables>
-              </ee:transform>
-              <!-- MOCK: Remplacement de l'appel DB update par des données mockées -->
-              <ee:transform doc:name="Mock Update Existing Party" doc:id="mock-update-existing-party">
-                <ee:message>
-                  <ee:set-payload><![CDATA[%dw 2.0
-output application/java
-var data = vars.partyData
----
-[{
-  id: 1,
-  global_id: vars.globalId,
-  party_type: data.party_type,
-  first_name: data.first_name,
-  last_name: data.last_name,
-  middle_name: data.middle_name,
-  organization_name: data.organization_name,
-  date_of_birth: data.date_of_birth,
-  tax_id: data.tax_id,
-  created_at: "2024-01-01T10:00:00Z",
-  updated_at: now()
-}]]]></ee:set-payload>
-                </ee:message>
-              </ee:transform>
-            </when>
-            <otherwise>
-              <!-- MOCK: Remplacement de l'appel DB insert par des données mockées -->
-              <ee:transform doc:name="Mock Insert New Party" doc:id="mock-insert-party">
-                <ee:message>
-                  <ee:set-payload><![CDATA[%dw 2.0
-output application/java
-var data = vars.partyData
----
-[{
-  id: 1,
-  global_id: "550e8400-e29b-41d4-a716-446655440000",
-  party_type: data.party_type,
-  first_name: data.first_name,
-  last_name: data.last_name,
-  middle_name: data.middle_name,
-  organization_name: data.organization_name,
-  date_of_birth: data.date_of_birth,
-  tax_id: data.tax_id,
+  global_id: globalId,
+  party_type: req.party_type,
+  first_name: req.first_name default null,
+  last_name: req.last_name default null,
+  middle_name: req.middle_name default null,
+  organization_name: req.organization_name default null,
+  date_of_birth: req.date_of_birth default null,
+  tax_id: req.tax_id default null,
   created_at: now(),
   updated_at: now()
 }]]]></ee:set-payload>
-                </ee:message>
-              </ee:transform>
-            </otherwise>
-          </choice>
-        </when>
-        <otherwise>
-          <!-- MOCK: Remplacement de l'appel DB insert par des données mockées -->
-          <ee:transform doc:name="Mock Insert New Party" doc:id="mock-insert-party-2">
-            <ee:message>
-              <ee:set-payload><![CDATA[%dw 2.0
-output application/java
-var data = vars.payload
----
-[{
-  id: 1,
-  global_id: "550e8400-e29b-41d4-a716-446655440000",
-  party_type: data.party_type,
-  first_name: data.first_name,
-  last_name: data.last_name,
-  middle_name: data.middle_name,
-  organization_name: data.organization_name,
-  date_of_birth: data.date_of_birth,
-  tax_id: data.tax_id,
-  created_at: now(),
-  updated_at: now()
-}]]]></ee:set-payload>
-            </ee:message>
-          </ee:transform>
-        </otherwise>
-      </choice>
-
-      <ee:transform doc:name="Store Party and Global ID">
+        </ee:message>
         <ee:variables>
           <ee:set-variable variableName="party"><![CDATA[#[payload[0]]]></ee:set-variable>
           <ee:set-variable variableName="globalId"><![CDATA[#[payload[0].global_id]]]></ee:set-variable>
         </ee:variables>
       </ee:transform>
 
-      <foreach doc:name="Upsert External IDs">
-        <!-- MOCK: Remplacement de l'appel DB insert par des données mockées -->
-        <ee:transform doc:name="Mock Insert External ID" doc:id="mock-insert-external-id">
-          <ee:message>
-            <ee:set-payload><![CDATA[%dw 2.0
-output application/java
----
-{
-  success: true
-}]]></ee:set-payload>
-          </ee:message>
-        </ee:transform>
-      </foreach>
-
-      <!-- MOCK: Remplacement de l'appel DB select par des données mockées -->
-      <ee:transform doc:name="Mock Get External IDs" doc:id="mock-get-external-ids-2">
+      <ee:transform doc:name="Mock Get External IDs">
         <ee:message>
           <ee:set-payload><![CDATA[%dw 2.0
 output application/java
+var externalIds = vars.externalIds default []
 ---
-[
-  {
+// Mock external IDs - return from request or default
+if (sizeOf(externalIds) > 0)
+  externalIds map ((ext) -> {
+    external_system: ext.system,
+    external_value: ext.value
+  })
+else
+  [{
     external_system: "Salesforce",
-    external_value: vars.globalId ++ "-SF"
-  },
-  {
-    external_system: "CoreBanking",
-    external_value: vars.globalId ++ "-CB"
-  }
-] default []]]></ee:set-payload>
+    external_value: "SF-001"
+  }]]]></ee:set-payload>
         </ee:message>
       </ee:transform>
 
@@ -347,10 +192,10 @@ var externalIds = payload
         </ee:message>
       </ee:transform>
 
-      <set-variable value="#[vars.globalId == null ? 201 : 200]" doc:name="httpStatus" doc:id="3d2964e6-aaed-4a23-85d8-76a1ea6b3e49" variableName="httpStatus"/>
+      <set-variable value="#[vars.globalId == null ? 201 : 200]" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
       
       <error-handler>
-        <on-error-propagate type="DB:QUERY_EXECUTION,DB:CONNECTIVITY" enableNotifications="true" logException="true" doc:name="Database Error">
+        <on-error-propagate type="*" enableNotifications="true" logException="true" doc:name="Error Handler">
           <ee:transform doc:name="Transform Error">
             <ee:message>
               <ee:set-payload><![CDATA[%dw 2.0
@@ -365,7 +210,7 @@ output application/json
 }]]></ee:set-payload>
             </ee:message>
           </ee:transform>
-          <set-variable value="500" doc:name="httpStatus" doc:id="094ef180-28cd-471e-a7ed-cf852d7f956e" variableName="httpStatus"/>
+          <set-variable value="500" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
         </on-error-propagate>
       </error-handler>
     </try>
@@ -374,26 +219,29 @@ output application/json
   <!-- GET /parties/{partyGlobalId} - Business Logic Flow -->
   <flow name="get-party-by-global-id-business-logic" doc:name="get-party-by-global-id-business-logic">
     <try doc:name="Try">
-      <!-- MOCK: Remplacement de l'appel DB select par des données mockées -->
-      <ee:transform doc:name="Mock Select Party by Global ID" doc:id="mock-select-party-by-id">
+      <ee:transform doc:name="Mock Select Party by Global ID">
         <ee:message>
           <ee:set-payload><![CDATA[%dw 2.0
 output application/java
-var globalId = vars.partyGlobalId default "550e8400-e29b-41d4-a716-446655440000"
+var partyGlobalId = vars.partyGlobalId
 ---
-[{
-  id: 1,
-  global_id: globalId,
-  party_type: "Individual",
-  first_name: "Jean",
-  last_name: "Dupont",
-  middle_name: null,
-  organization_name: null,
-  date_of_birth: "1980-01-15",
-  tax_id: "123456789",
-  created_at: "2024-01-01T10:00:00Z",
-  updated_at: "2024-01-01T10:00:00Z"
-}] default []]]></ee:set-payload>
+// Mock data - return party if partyGlobalId matches, otherwise empty array
+if (partyGlobalId != null and partyGlobalId != "")
+  [{
+    id: 1,
+    global_id: partyGlobalId,
+    party_type: "Individual",
+    first_name: "John",
+    last_name: "Doe",
+    middle_name: null,
+    organization_name: null,
+    date_of_birth: "1990-01-15" as Date,
+    tax_id: "TAX-123456",
+    created_at: "2024-01-15T00:00:00Z" as DateTime,
+    updated_at: "2024-01-20T00:00:00Z" as DateTime
+  }]
+else
+  []]]></ee:set-payload>
         </ee:message>
       </ee:transform>
 
@@ -405,22 +253,16 @@ var globalId = vars.partyGlobalId default "550e8400-e29b-41d4-a716-446655440000"
             </ee:variables>
           </ee:transform>
 
-          <!-- MOCK: Remplacement de l'appel DB select par des données mockées -->
-          <ee:transform doc:name="Mock Get External IDs" doc:id="mock-get-external-ids-3">
+          <ee:transform doc:name="Mock Get External IDs">
             <ee:message>
               <ee:set-payload><![CDATA[%dw 2.0
 output application/java
 ---
-[
-  {
-    external_system: "Salesforce",
-    external_value: vars.party.global_id ++ "-SF"
-  },
-  {
-    external_system: "CoreBanking",
-    external_value: vars.party.global_id ++ "-CB"
-  }
-] default []]]></ee:set-payload>
+// Mock external IDs
+[{
+  external_system: "Salesforce",
+  external_value: "SF-001"
+}] default []]]></ee:set-payload>
             </ee:message>
           </ee:transform>
 
@@ -450,9 +292,8 @@ var externalIds = payload
 }]]></ee:set-payload>
             </ee:message>
           </ee:transform>
-					<set-variable value="200" doc:name="httpStatus" doc:id="baf9d7f5-db65-4f60-9590-42a9c7c9e2f8" variableName="httpStatus"/>
-        
-</when>
+          <set-variable value="200" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
+        </when>
         <otherwise>
           <ee:transform doc:name="Error Response">
             <ee:message>
@@ -468,13 +309,12 @@ output application/json
 }]]></ee:set-payload>
             </ee:message>
           </ee:transform>
-					<set-variable value="404" doc:name="httpStatus" doc:id="0ea69104-5e43-4b58-a3b1-a6919442ece8" variableName="httpStatus"/>
-        
-</otherwise>
+          <set-variable value="404" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
+        </otherwise>
       </choice>
       
       <error-handler>
-        <on-error-propagate type="DB:QUERY_EXECUTION,DB:CONNECTIVITY" enableNotifications="true" logException="true" doc:name="Database Error">
+        <on-error-propagate type="*" enableNotifications="true" logException="true" doc:name="Error Handler">
           <ee:transform doc:name="Transform Error">
             <ee:message>
               <ee:set-payload><![CDATA[%dw 2.0
@@ -489,7 +329,7 @@ output application/json
 }]]></ee:set-payload>
             </ee:message>
           </ee:transform>
-          <set-variable value="500" doc:name="httpStatus" doc:id="187deec9-ec6a-44c6-941b-5c9e089ab8c6" variableName="httpStatus"/>
+          <set-variable value="500" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
         </on-error-propagate>
       </error-handler>
     </try>
@@ -498,25 +338,29 @@ output application/json
   <!-- POST /parties/lookup - Business Logic Flow -->
   <flow name="lookup-party-business-logic" doc:name="lookup-party-business-logic">
     <try doc:name="Try">
-      <!-- MOCK: Remplacement de l'appel DB select par des données mockées -->
-      <ee:transform doc:name="Mock Lookup Party by External ID" doc:id="mock-lookup-party-external-id">
+      <ee:transform doc:name="Mock Lookup Party by External ID">
         <ee:message>
           <ee:set-payload><![CDATA[%dw 2.0
 output application/java
+var externalId = payload.externalId default {}
 ---
-[{
-  id: 1,
-  global_id: "550e8400-e29b-41d4-a716-446655440000",
-  party_type: "Individual",
-  first_name: "Jean",
-  last_name: "Dupont",
-  middle_name: null,
-  organization_name: null,
-  date_of_birth: "1980-01-15",
-  tax_id: "123456789",
-  created_at: "2024-01-01T10:00:00Z",
-  updated_at: "2024-01-01T10:00:00Z"
-}] default []]]></ee:set-payload>
+// Mock lookup - return party if external ID matches, otherwise empty array
+if (externalId.system != null and externalId.value != null)
+  [{
+    id: 1,
+    global_id: "party-global-001",
+    party_type: "Individual",
+    first_name: "John",
+    last_name: "Doe",
+    middle_name: null,
+    organization_name: null,
+    date_of_birth: "1990-01-15" as Date,
+    tax_id: "TAX-123456",
+    created_at: "2024-01-15T00:00:00Z" as DateTime,
+    updated_at: "2024-01-20T00:00:00Z" as DateTime
+  }]
+else
+  []]]></ee:set-payload>
         </ee:message>
       </ee:transform>
 
@@ -528,22 +372,16 @@ output application/java
             </ee:variables>
           </ee:transform>
 
-          <!-- MOCK: Remplacement de l'appel DB select par des données mockées -->
-          <ee:transform doc:name="Mock Get External IDs" doc:id="mock-get-external-ids-4">
+          <ee:transform doc:name="Mock Get External IDs">
             <ee:message>
               <ee:set-payload><![CDATA[%dw 2.0
 output application/java
 ---
-[
-  {
-    external_system: "Salesforce",
-    external_value: vars.party.global_id ++ "-SF"
-  },
-  {
-    external_system: "CoreBanking",
-    external_value: vars.party.global_id ++ "-CB"
-  }
-] default []]]></ee:set-payload>
+// Mock external IDs
+[{
+  external_system: payload.externalId.system default "Salesforce",
+  external_value: payload.externalId.value default "SF-001"
+}] default []]]></ee:set-payload>
             </ee:message>
           </ee:transform>
 
@@ -573,9 +411,8 @@ var externalIds = payload
 }]]></ee:set-payload>
             </ee:message>
           </ee:transform>
-					<set-variable value="200" doc:name="httpStatus" doc:id="dc54658c-e8d6-4470-8086-4c6dafc643ab" variableName="httpStatus"/>
-        
-</when>
+          <set-variable value="200" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
+        </when>
         <otherwise>
           <ee:transform doc:name="Error Response">
             <ee:message>
@@ -591,13 +428,12 @@ output application/json
 }]]></ee:set-payload>
             </ee:message>
           </ee:transform>
-					<set-variable value="404" doc:name="httpStatus" doc:id="5f2c3177-4957-4e97-97ba-de0a4483f469" variableName="httpStatus"/>
-        
-</otherwise>
+          <set-variable value="404" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
+        </otherwise>
       </choice>
       
       <error-handler>
-        <on-error-propagate type="DB:QUERY_EXECUTION,DB:CONNECTIVITY" enableNotifications="true" logException="true" doc:name="Database Error">
+        <on-error-propagate type="*" enableNotifications="true" logException="true" doc:name="Error Handler">
           <ee:transform doc:name="Transform Error">
             <ee:message>
               <ee:set-payload><![CDATA[%dw 2.0
@@ -612,7 +448,7 @@ output application/json
 }]]></ee:set-payload>
             </ee:message>
           </ee:transform>
-          <set-variable value="500" doc:name="httpStatus" doc:id="40f4bd37-7df3-4307-b7ad-e380f582c222" variableName="httpStatus"/>
+          <set-variable value="500" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
         </on-error-propagate>
       </error-handler>
     </try>
