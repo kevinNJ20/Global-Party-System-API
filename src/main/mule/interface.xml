@@ -1,26 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mule xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
-      xmlns:http="http://www.mulesoft.org/schema/mule/http"
-      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
-      xmlns="http://www.mulesoft.org/schema/mule/core"
-      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-      http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-      http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
-      http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
-
-  <!-- APIkit Router Configuration -->
-
-  <!-- Main HTTP Listener with APIkit Router -->
-  <flow name="main">
-    <http:listener config-ref="HTTP_Listener_config" path="/api/*" doc:name="HTTP Listener"/>
-    <apikit:router doc:name="APIkit Router" doc:id="4ad9b03d-a8ce-49e0-a11f-b74933560a94" config-ref="global-party-system-api-config"/>
-		<error-handler>
-      <on-error-propagate type="APIKIT:NOT_FOUND" enableNotifications="true" logException="true" doc:name="On Error Propagate">
-        <ee:transform doc:name="Transform Error Response">
-          <ee:message>
-            <ee:set-payload><![CDATA[%dw 2.0
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd       http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd       http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+    <!-- APIkit Router Configuration -->
+    <!-- Main HTTP Listener with APIkit Router -->
+    <flow name="main">
+        <http:listener config-ref="HTTP_Listener_config" path="/api/*" doc:name="HTTP Listener">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:router doc:name="APIkit Router" doc:id="4ad9b03d-a8ce-49e0-a11f-b74933560a94" config-ref="global-party-system-api-config" />
+        <error-handler>
+            <on-error-propagate type="APIKIT:NOT_FOUND" enableNotifications="true" logException="true" doc:name="On Error Propagate">
+                <ee:transform doc:name="Transform Error Response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
 output application/json
 ---
 {
@@ -30,14 +26,14 @@ output application/json
     timestamp: now()
   }
 }]]></ee:set-payload>
-          </ee:message>
-        </ee:transform>
-        <set-variable value="404" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
-      </on-error-propagate>
-      <on-error-propagate type="APIKIT:BAD_REQUEST" enableNotifications="true" logException="true" doc:name="On Error Propagate">
-        <ee:transform doc:name="Transform Error Response">
-          <ee:message>
-            <ee:set-payload><![CDATA[%dw 2.0
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="404" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus" />
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:BAD_REQUEST" enableNotifications="true" logException="true" doc:name="On Error Propagate">
+                <ee:transform doc:name="Transform Error Response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
 output application/json
 ---
 {
@@ -47,14 +43,14 @@ output application/json
     timestamp: now()
   }
 }]]></ee:set-payload>
-          </ee:message>
-        </ee:transform>
-        <set-variable value="400" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
-      </on-error-propagate>
-      <on-error-propagate type="APIKIT:NOT_ACCEPTABLE" enableNotifications="true" logException="true" doc:name="On Error Propagate">
-        <ee:transform doc:name="Transform Error Response">
-          <ee:message>
-            <ee:set-payload><![CDATA[%dw 2.0
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="400" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus" />
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_ACCEPTABLE" enableNotifications="true" logException="true" doc:name="On Error Propagate">
+                <ee:transform doc:name="Transform Error Response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
 output application/json
 ---
 {
@@ -64,14 +60,14 @@ output application/json
     timestamp: now()
   }
 }]]></ee:set-payload>
-          </ee:message>
-        </ee:transform>
-        <set-variable value="406" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
-      </on-error-propagate>
-      <on-error-propagate type="APIKIT:UNSUPPORTED_MEDIA_TYPE" enableNotifications="true" logException="true" doc:name="On Error Propagate">
-        <ee:transform doc:name="Transform Error Response">
-          <ee:message>
-            <ee:set-payload><![CDATA[%dw 2.0
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="406" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus" />
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:UNSUPPORTED_MEDIA_TYPE" enableNotifications="true" logException="true" doc:name="On Error Propagate">
+                <ee:transform doc:name="Transform Error Response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
 output application/json
 ---
 {
@@ -81,14 +77,14 @@ output application/json
     timestamp: now()
   }
 }]]></ee:set-payload>
-          </ee:message>
-        </ee:transform>
-        <set-variable value="415" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
-      </on-error-propagate>
-      <on-error-propagate type="APIKIT:METHOD_NOT_ALLOWED" enableNotifications="true" logException="true" doc:name="On Error Propagate">
-        <ee:transform doc:name="Transform Error Response">
-          <ee:message>
-            <ee:set-payload><![CDATA[%dw 2.0
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="415" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus" />
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:METHOD_NOT_ALLOWED" enableNotifications="true" logException="true" doc:name="On Error Propagate">
+                <ee:transform doc:name="Transform Error Response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
 output application/json
 ---
 {
@@ -98,18 +94,17 @@ output application/json
     timestamp: now()
   }
 }]]></ee:set-payload>
-          </ee:message>
-        </ee:transform>
-        <set-variable value="405" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
-      </on-error-propagate>
-    </error-handler>
-  </flow>
-
-  <!-- GET /parties -->
-  <flow name="get:\parties:global-party-system-api-config">
-    <ee:transform doc:name="Build Query Parameters">
-      <ee:message>
-        <ee:set-payload><![CDATA[%dw 2.0
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="405" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus" />
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+    <!-- GET /parties -->
+    <flow name="get:\parties:global-party-system-api-config">
+        <ee:transform doc:name="Build Query Parameters">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
 output application/java
 ---
 {
@@ -119,26 +114,119 @@ output application/java
   limit: (attributes.queryParams.limit as Number default 100) as String,
   offset: (attributes.queryParams.offset as Number default 0) as String
 }]]></ee:set-payload>
-      </ee:message>
-    </ee:transform>
-    <flow-ref name="get-parties-business-logic" doc:name="get-parties-business-logic"/>
-  </flow>
-
-  <!-- POST /parties -->
-  <flow name="post:\parties:global-party-system-api-config">
-    <flow-ref name="upsert-party-business-logic" doc:name="upsert-party-business-logic"/>
-  </flow>
-
-  <!-- GET /parties/{partyGlobalId} -->
-  <flow name="get:\parties\(partyGlobalId):global-party-system-api-config">
-    <set-variable value="#[attributes.uriParams.partyGlobalId]" variableName="partyGlobalId" doc:name="Set Party Global ID"/>
-    <flow-ref name="get-party-by-global-id-business-logic" doc:name="get-party-by-global-id-business-logic"/>
-  </flow>
-
-  <!-- POST /parties/lookup -->
-  <flow name="post:\parties\lookup:global-party-system-api-config">
-    <flow-ref name="lookup-party-business-logic" doc:name="lookup-party-business-logic"/>
-  </flow>
-
+            </ee:message>
+        </ee:transform>
+        <flow-ref name="get-parties-business-logic" doc:name="get-parties-business-logic" />
+    </flow>
+    <!-- POST /parties -->
+    <flow name="post:\parties:application\json:global-party-system-api-config">
+        <flow-ref name="upsert-party-business-logic" doc:name="upsert-party-business-logic" />
+    </flow>
+    <!-- GET /parties/{partyGlobalId} -->
+    <flow name="get:\parties\(partyGlobalId):global-party-system-api-config">
+        <set-variable value="#[attributes.uriParams.partyGlobalId]" variableName="partyGlobalId" doc:name="Set Party Global ID" />
+        <flow-ref name="get-party-by-global-id-business-logic" doc:name="get-party-by-global-id-business-logic" />
+    </flow>
+    <!-- POST /parties/lookup -->
+    <flow name="post:\parties\lookup:application\json:global-party-system-api-config">
+        <flow-ref name="lookup-party-business-logic" doc:name="lookup-party-business-logic" />
+    </flow>
+    <flow name="console" doc:id="4480d5d1-469f-41e5-a976-1d17ae5ba20d">
+        <http:listener doc:name="HTTP Listener" doc:id="7f76e838-4db4-4cd1-93c0-d0175649383d" config-ref="HTTP_Listener_config" path="/console/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:console doc:name="APIkit Console" doc:id="ab5ee349-56cd-4e78-b4eb-8809c5e72e39" config-ref="global-party-system-api-config" />
+        <error-handler>
+            <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="5ebd9a69-4623-4e41-8199-699cb2d7be78" type="APIKIT:NOT_FOUND">
+                <ee:transform doc:name="Transform Error Response" doc:id="81e65b3d-6778-4db5-ad45-f8dc2bf80b00">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: {
+    code: "NOT_FOUND",
+    message: "Resource not found",
+    timestamp: now()
+  }
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="404" doc:name="httpStatus" doc:id="1003f71a-e2e1-4a88-b9af-26d496202fba" variableName="httpStatus" />
+            </on-error-propagate>
+            <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate1" doc:id="787ee23e-4a17-408c-9a61-88d5a07890d8" type="APIKIT:BAD_REQUEST">
+                <ee:transform doc:name="Transform Error Response" doc:id="da6e23be-9e17-4540-ac1d-4fd6fa308d8b">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: {
+    code: "BAD_REQUEST",
+    message: error.description default "Bad request",
+    timestamp: now()
+  }
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="400" doc:name="httpStatus" doc:id="4980dc46-1207-4f8f-b6d1-326468f28a72" variableName="httpStatus" />
+            </on-error-propagate>
+            <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate2" doc:id="ae89c224-da1f-45a5-8ce1-f42230188651" type="APIKIT:NOT_ACCEPTABLE">
+                <ee:transform doc:name="Transform Error Response" doc:id="1db6787b-7350-4bdc-923b-37808b750ff5">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: {
+    code: "NOT_ACCEPTABLE",
+    message: "Content type not acceptable",
+    timestamp: now()
+  }
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="406" doc:name="httpStatus" doc:id="5aac7265-cd4c-419e-a6a4-2d640bec46f9" variableName="httpStatus" />
+            </on-error-propagate>
+            <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate3" doc:id="b5803e09-6b2f-406d-b760-5484f8240e91" type="APIKIT:UNSUPPORTED_MEDIA_TYPE">
+                <ee:transform doc:name="Transform Error Response" doc:id="bedcabc0-4fc2-43c8-bb18-5ee9b67ae805">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: {
+    code: "UNSUPPORTED_MEDIA_TYPE",
+    message: "Unsupported media type",
+    timestamp: now()
+  }
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="415" doc:name="httpStatus" doc:id="1d5486f6-5614-40e3-b2e0-5f54a5f9d2b8" variableName="httpStatus" />
+            </on-error-propagate>
+            <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate4" doc:id="bd2fc892-cc80-48ab-95b0-8b5b34a6d1be" type="APIKIT:METHOD_NOT_ALLOWED">
+                <ee:transform doc:name="Transform Error Response" doc:id="f0a580b5-ccb7-4947-8691-869029e9100b">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: {
+    code: "METHOD_NOT_ALLOWED",
+    message: "Method not allowed",
+    timestamp: now()
+  }
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="405" doc:name="httpStatus" doc:id="753dfa96-6aad-48a1-96b2-20228fcf62de" variableName="httpStatus" />
+            </on-error-propagate>
+        </error-handler>
+    </flow>
 </mule>
-
