@@ -39,7 +39,10 @@ var params = payload default {}
 ] default []]]></ee:set-payload>
         </ee:message>
         <ee:variables>
-          <ee:set-variable variableName="parties"><![CDATA[#[payload]]]></ee:set-variable>
+          <ee:set-variable variableName="parties"><![CDATA[%dw 2.0
+output application/java
+---
+if (payload is Array) payload else [payload] default []]]></ee:set-variable>
         </ee:variables>
       </ee:transform>
 
