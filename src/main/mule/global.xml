@@ -14,7 +14,7 @@ http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/m
 
   <!-- HTTP Listener Configuration -->
   <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config">
-    <http:listener-connection host="0.0.0.0" port="8081" />
+    <http:listener-connection host="${http.host}" port="${http.port}" />
   </http:listener-config>
 	<global-property doc:name="Global Property" doc:id="46e78b88-87cb-4891-b1ff-aac9f7ba55e2" name="exchange.maven.restConnect.skip" value="true" />
 	<apikit:config outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" doc:name="Router" doc:id="8dfcc381-d3df-43ed-9d52-6ddacd390e4a" name="global-party-system-api-config" api="global-party-system-api.raml" />
