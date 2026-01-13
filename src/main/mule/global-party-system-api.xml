@@ -116,7 +116,8 @@ output application/java
       <ee:variables>
         <ee:set-variable variableName="partyData"><![CDATA[%dw 2.0
 output application/java
---- payload]]></ee:set-variable>
+---
+payload]]></ee:set-variable>
         <ee:set-variable variableName="externalIds"><![CDATA[%dw 2.0
 output application/java
 --- payload.externalIds default []]]></ee:set-variable>
@@ -132,7 +133,7 @@ var req = vars.partyData
 var globalId = req.global_id default ("party-global-" ++ (now() as String {format: "yyyyMMddHHmmssSSS"}))
 ---
 // Mock upsert - return party with global_id
-[{
+{
   id: 1,
   global_id: globalId,
   party_type: req.party_type,
@@ -144,15 +145,17 @@ var globalId = req.global_id default ("party-global-" ++ (now() as String {forma
   tax_id: req.tax_id default null,
   created_at: now(),
   updated_at: now()
-}]]]></ee:set-payload>
+}]]></ee:set-payload>
         </ee:message>
         <ee:variables>
           <ee:set-variable variableName="party"><![CDATA[%dw 2.0
 output application/java
---- payload[0]]]></ee:set-variable>
+---
+payload]]></ee:set-variable>
           <ee:set-variable variableName="globalId"><![CDATA[%dw 2.0
 output application/java
---- payload[0].global_id]]></ee:set-variable>
+---
+payload.global_id default null]]></ee:set-variable>
         </ee:variables>
       </ee:transform>
 
