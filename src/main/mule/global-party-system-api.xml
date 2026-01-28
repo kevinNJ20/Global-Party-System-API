@@ -37,19 +37,26 @@ if (payload is Array) payload else [payload] default []]]></ee:set-variable>
         </ee:variables>
       </ee:transform>
 
-      <db:select config-ref="Database_Config" doc:name="Select External IDs">
-        <db:sql><![CDATA[
-          SELECT party_global_id, external_system, external_value
-          FROM external_ids
-          WHERE party_global_id = ANY(:partyGlobalIds::uuid[])
-        ]]></db:sql>
-        <db:input-parameters><![CDATA[#[%dw 2.0
+      <choice doc:name="Has Parties?">
+        <when expression="#[sizeOf(vars.parties) > 0]">
+          <db:select config-ref="Database_Config" doc:name="Select External IDs">
+            <db:sql><![CDATA[
+              SELECT party_global_id, external_system, external_value
+              FROM external_ids
+              WHERE party_global_id = ANY(:partyGlobalIds::uuid[])
+            ]]></db:sql>
+            <db:input-parameters><![CDATA[#[%dw 2.0
 output application/java
 ---
 {
   partyGlobalIds: vars.parties map ((party) -> party.global_id)
 }]]]></db:input-parameters>
-      </db:select>
+          </db:select>
+        </when>
+        <otherwise>
+          <set-payload value="#[[]]" doc:name="Set Empty Array"/>
+        </otherwise>
+      </choice>
 
       <ee:transform doc:name="Transform to Party Response">
         <ee:message>
