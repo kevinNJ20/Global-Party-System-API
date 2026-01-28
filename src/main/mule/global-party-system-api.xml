@@ -4,40 +4,31 @@
   xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
       xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
       http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
-	http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+	http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
 
   <!-- GET /parties - Business Logic Flow -->
   <flow name="get-parties-business-logic" doc:name="get-parties-business-logic">
     <try doc:name="Try">
-      <ee:transform doc:name="Mock Select Parties with External IDs">
-        <ee:message>
-          <ee:set-payload><![CDATA[%dw 2.0
-output application/java
-var params = payload default {}
----
-// Mock data - simulating database query results with external IDs
-[
-  {
-    id: 1,
-    global_id: params.globalId default "party-global-001",
-    party_type: params.partyType default "Individual",
-    first_name: "John",
-    last_name: params.lastName default "Doe",
-    middle_name: null,
-    organization_name: null,
-    date_of_birth: "1990-01-15" as Date,
-    tax_id: "TAX-123456",
-    externalIds: [{
-      external_system: "Salesforce",
-      external_value: "SF-001"
-    }],
-    created_at: "2024-01-15T00:00:00Z" as DateTime,
-    updated_at: "2024-01-20T00:00:00Z" as DateTime
-  }
-] default []]]></ee:set-payload>
-        </ee:message>
+      <db:select config-ref="Database_Config" doc:name="Select Global Parties">
+        <db:sql><![CDATA[
+          SELECT *
+          FROM global_parties
+          WHERE
+            (:globalId::uuid IS NULL OR global_id = :globalId::uuid)
+            AND (:partyType IS NULL OR party_type = :partyType)
+            AND (:lastName IS NULL OR last_name = :lastName)
+            AND (:taxId IS NULL OR tax_id = :taxId)
+          ORDER BY created_at DESC
+          LIMIT :limit::integer OFFSET :offset::integer
+        ]]></db:sql>
+        <db:input-parameters><![CDATA[#[payload default {}]]]></db:input-parameters>
+      </db:select>
+
+      <ee:transform doc:name="Store Parties">
         <ee:variables>
           <ee:set-variable variableName="parties"><![CDATA[%dw 2.0
 output application/java
@@ -46,14 +37,31 @@ if (payload is Array) payload else [payload] default []]]></ee:set-variable>
         </ee:variables>
       </ee:transform>
 
+      <db:select config-ref="Database_Config" doc:name="Select External IDs">
+        <db:sql><![CDATA[
+          SELECT party_global_id, external_system, external_value
+          FROM external_ids
+          WHERE party_global_id = ANY(:partyGlobalIds::uuid[])
+        ]]></db:sql>
+        <db:input-parameters><![CDATA[#[%dw 2.0
+output application/java
+---
+{
+  partyGlobalIds: vars.parties map ((party) -> party.global_id)
+}]]]></db:input-parameters>
+      </db:select>
+
       <ee:transform doc:name="Transform to Party Response">
         <ee:message>
           <ee:set-payload><![CDATA[%dw 2.0
 output application/json
+var parties = vars.parties
+var externalIds = payload
+var externalIdsByParty = externalIds groupBy $.party_global_id
 ---
-vars.parties map ((party) -> {
-  id: party.id,
-  globalId: party.global_id,
+parties map ((party) -> {
+  id: party.id as String,
+  globalId: party.global_id as String,
   partyType: party.party_type,
   firstName: party.first_name,
   lastName: party.last_name,
@@ -61,7 +69,7 @@ vars.parties map ((party) -> {
   organizationName: party.organization_name,
   dateOfBirth: party.date_of_birth,
   taxId: party.tax_id,
-  externalIds: (party.externalIds default []) map ((ext) -> {
+  externalIds: (externalIdsByParty[party.global_id as String] default []) map ((ext) -> {
     system: ext.external_system,
     value: ext.external_value
   }),
@@ -125,59 +133,98 @@ output application/java
     </ee:transform>
 
     <try doc:name="Try">
-      <ee:transform doc:name="Mock Upsert Party">
-        <ee:message>
-          <ee:set-payload><![CDATA[%dw 2.0
-output application/java
-var req = vars.partyData
-var globalId = req.global_id default ("party-global-" ++ (now() as String {format: "yyyyMMddHHmmssSSS"}))
----
-// Mock upsert - return party with global_id
-{
-  id: 1,
-  global_id: globalId,
-  party_type: req.party_type,
-  first_name: req.first_name default null,
-  last_name: req.last_name default null,
-  middle_name: req.middle_name default null,
-  organization_name: req.organization_name default null,
-  date_of_birth: req.date_of_birth default null,
-  tax_id: req.tax_id default null,
-  created_at: now(),
-  updated_at: now()
-}]]></ee:set-payload>
-        </ee:message>
+      <db:insert config-ref="Database_Config" doc:name="Upsert Party">
+        <db:sql><![CDATA[
+          INSERT INTO global_parties (
+            global_id, party_type, first_name, last_name, middle_name,
+            organization_name, date_of_birth, tax_id
+          )
+          VALUES (
+            COALESCE(:global_id::uuid, gen_random_uuid()),
+            :party_type, :first_name, :last_name, :middle_name,
+            :organization_name, :date_of_birth::date, :tax_id
+          )
+          ON CONFLICT (global_id) DO UPDATE SET
+            party_type = EXCLUDED.party_type,
+            first_name = EXCLUDED.first_name,
+            last_name = EXCLUDED.last_name,
+            middle_name = EXCLUDED.middle_name,
+            organization_name = EXCLUDED.organization_name,
+            date_of_birth = EXCLUDED.date_of_birth,
+            tax_id = EXCLUDED.tax_id,
+            updated_at = CURRENT_TIMESTAMP
+          RETURNING *
+        ]]></db:sql>
+        <db:input-parameters><![CDATA[#[vars.partyData]]]></db:input-parameters>
+      </db:insert>
+
+      <ee:transform doc:name="Store Party">
         <ee:variables>
           <ee:set-variable variableName="party"><![CDATA[%dw 2.0
 output application/java
 ---
-payload]]></ee:set-variable>
+payload[0]]]></ee:set-variable>
           <ee:set-variable variableName="globalId"><![CDATA[%dw 2.0
 output application/java
 ---
-payload.global_id default null]]></ee:set-variable>
+payload[0].global_id]]></ee:set-variable>
         </ee:variables>
       </ee:transform>
 
-      <ee:transform doc:name="Mock Get External IDs">
-        <ee:message>
-          <ee:set-payload><![CDATA[%dw 2.0
+      <choice doc:name="Has External IDs?">
+        <when expression="#[sizeOf(vars.externalIds) > 0]">
+          <db:delete config-ref="Database_Config" doc:name="Delete Existing External IDs">
+            <db:sql><![CDATA[
+              DELETE FROM external_ids
+              WHERE party_global_id = :globalId::uuid
+            ]]></db:sql>
+            <db:input-parameters><![CDATA[#[{
+              globalId: vars.globalId
+            }]]]></db:input-parameters>
+          </db:delete>
+
+          <ee:transform doc:name="Transform External IDs for Insert">
+            <ee:message>
+              <ee:set-payload><![CDATA[%dw 2.0
 output application/java
-var externalIds = vars.externalIds default []
 ---
-// Mock external IDs - return from request or default
-if (sizeOf(externalIds) > 0)
-  externalIds map ((ext) -> {
-    external_system: ext.system,
-    external_value: ext.value
-  })
-else
-  [{
-    external_system: "Salesforce",
-    external_value: "SF-001"
-  }]]]></ee:set-payload>
-        </ee:message>
-      </ee:transform>
+vars.externalIds map ((ext) -> {
+  party_global_id: vars.globalId,
+  external_system: ext.system,
+  external_value: ext.value
+})]]></ee:set-payload>
+            </ee:message>
+          </ee:transform>
+
+          <foreach doc:name="Insert External IDs">
+            <db:insert config-ref="Database_Config" doc:name="Insert External ID">
+              <db:sql><![CDATA[
+                INSERT INTO external_ids (
+                  party_global_id, external_system, external_value
+                )
+                VALUES (
+                  :party_global_id::uuid, :external_system, :external_value
+                )
+                ON CONFLICT (party_global_id, external_system) DO UPDATE SET
+                  external_value = EXCLUDED.external_value
+                RETURNING *
+              ]]></db:sql>
+              <db:input-parameters><![CDATA[#[payload]]]></db:input-parameters>
+            </db:insert>
+          </foreach>
+        </when>
+      </choice>
+
+      <db:select config-ref="Database_Config" doc:name="Get External IDs">
+        <db:sql><![CDATA[
+          SELECT external_system, external_value
+          FROM external_ids
+          WHERE party_global_id = :globalId::uuid
+        ]]></db:sql>
+        <db:input-parameters><![CDATA[#[{
+          globalId: vars.globalId
+        }]]]></db:input-parameters>
+      </db:select>
 
       <ee:transform doc:name="Transform Response">
         <ee:message>
@@ -187,8 +234,8 @@ var party = vars.party
 var externalIds = payload
 ---
 {
-  id: party.id,
-  globalId: party.global_id,
+  id: party.id as String,
+  globalId: party.global_id as String,
   partyType: party.party_type,
   firstName: party.first_name,
   lastName: party.last_name,
@@ -206,7 +253,7 @@ var externalIds = payload
         </ee:message>
       </ee:transform>
 
-      <set-variable value="#[if(vars.globalId == null) 201 else 200]" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
+      <set-variable value="#[if(vars.partyData.global_id == null) 201 else 200]" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
       
       <error-handler>
         <on-error-propagate type="*" enableNotifications="true" logException="true" doc:name="Error Handler">
@@ -233,31 +280,16 @@ output application/json
   <!-- GET /parties/{partyGlobalId} - Business Logic Flow -->
   <flow name="get-party-by-global-id-business-logic" doc:name="get-party-by-global-id-business-logic">
     <try doc:name="Try">
-      <ee:transform doc:name="Mock Select Party by Global ID">
-        <ee:message>
-          <ee:set-payload><![CDATA[%dw 2.0
-output application/java
-var partyGlobalId = vars.partyGlobalId
----
-// Mock data - return party if partyGlobalId matches, otherwise empty array
-if (partyGlobalId != null and partyGlobalId != "")
-  [{
-    id: 1,
-    global_id: partyGlobalId,
-    party_type: "Individual",
-    first_name: "John",
-    last_name: "Doe",
-    middle_name: null,
-    organization_name: null,
-    date_of_birth: "1990-01-15" as Date,
-    tax_id: "TAX-123456",
-    created_at: "2024-01-15T00:00:00Z" as DateTime,
-    updated_at: "2024-01-20T00:00:00Z" as DateTime
-  }]
-else
-  []]]></ee:set-payload>
-        </ee:message>
-      </ee:transform>
+      <db:select config-ref="Database_Config" doc:name="Select Party by Global ID">
+        <db:sql><![CDATA[
+          SELECT *
+          FROM global_parties
+          WHERE global_id = :partyGlobalId::uuid
+        ]]></db:sql>
+        <db:input-parameters><![CDATA[#[{
+          partyGlobalId: vars.partyGlobalId
+        }]]]></db:input-parameters>
+      </db:select>
 
       <choice doc:name="Party Found?">
         <when expression="#[sizeOf(payload) > 0]">
@@ -269,18 +301,16 @@ output application/java
             </ee:variables>
           </ee:transform>
 
-          <ee:transform doc:name="Mock Get External IDs">
-            <ee:message>
-              <ee:set-payload><![CDATA[%dw 2.0
-output application/java
----
-// Mock external IDs
-[{
-  external_system: "Salesforce",
-  external_value: "SF-001"
-}] default []]]></ee:set-payload>
-            </ee:message>
-          </ee:transform>
+          <db:select config-ref="Database_Config" doc:name="Get External IDs">
+            <db:sql><![CDATA[
+              SELECT external_system, external_value
+              FROM external_ids
+              WHERE party_global_id = :partyGlobalId::uuid
+            ]]></db:sql>
+            <db:input-parameters><![CDATA[#[{
+              partyGlobalId: vars.partyGlobalId
+            }]]]></db:input-parameters>
+          </db:select>
 
           <ee:transform doc:name="Transform Response">
             <ee:message>
@@ -290,8 +320,8 @@ var party = vars.party
 var externalIds = payload
 ---
 {
-  id: party.id,
-  globalId: party.global_id,
+  id: party.id as String,
+  globalId: party.global_id as String,
   partyType: party.party_type,
   firstName: party.first_name,
   lastName: party.last_name,
@@ -354,31 +384,23 @@ output application/json
   <!-- POST /parties/lookup - Business Logic Flow -->
   <flow name="lookup-party-business-logic" doc:name="lookup-party-business-logic">
     <try doc:name="Try">
-      <ee:transform doc:name="Mock Lookup Party by External ID">
-        <ee:message>
-          <ee:set-payload><![CDATA[%dw 2.0
+      <db:select config-ref="Database_Config" doc:name="Lookup Party by External ID">
+        <db:sql><![CDATA[
+          SELECT gp.*
+          FROM global_parties gp
+          INNER JOIN external_ids ei ON gp.global_id = ei.party_global_id
+          WHERE ei.external_system = :externalSystem
+            AND ei.external_value = :externalValue
+        ]]></db:sql>
+        <db:input-parameters><![CDATA[#[%dw 2.0
 output application/java
 var externalId = payload.externalId default {}
 ---
-// Mock lookup - return party if external ID matches, otherwise empty array
-if (externalId.system != null and externalId.value != null)
-  [{
-    id: 1,
-    global_id: "party-global-001",
-    party_type: "Individual",
-    first_name: "John",
-    last_name: "Doe",
-    middle_name: null,
-    organization_name: null,
-    date_of_birth: "1990-01-15" as Date,
-    tax_id: "TAX-123456",
-    created_at: "2024-01-15T00:00:00Z" as DateTime,
-    updated_at: "2024-01-20T00:00:00Z" as DateTime
-  }]
-else
-  []]]></ee:set-payload>
-        </ee:message>
-      </ee:transform>
+{
+  externalSystem: externalId.system,
+  externalValue: externalId.value
+}]]]></db:input-parameters>
+      </db:select>
 
       <choice doc:name="Party Found?">
         <when expression="#[sizeOf(payload) > 0]">
@@ -390,18 +412,19 @@ output application/java
             </ee:variables>
           </ee:transform>
 
-          <ee:transform doc:name="Mock Get External IDs">
-            <ee:message>
-              <ee:set-payload><![CDATA[%dw 2.0
+          <db:select config-ref="Database_Config" doc:name="Get External IDs">
+            <db:sql><![CDATA[
+              SELECT external_system, external_value
+              FROM external_ids
+              WHERE party_global_id = :partyGlobalId::uuid
+            ]]></db:sql>
+            <db:input-parameters><![CDATA[#[%dw 2.0
 output application/java
 ---
-// Mock external IDs
-[{
-  external_system: payload.externalId.system default "Salesforce",
-  external_value: payload.externalId.value default "SF-001"
-}] default []]]></ee:set-payload>
-            </ee:message>
-          </ee:transform>
+{
+  partyGlobalId: vars.party.global_id
+}]]]></db:input-parameters>
+          </db:select>
 
           <ee:transform doc:name="Transform Response">
             <ee:message>
@@ -411,8 +434,8 @@ var party = vars.party
 var externalIds = payload
 ---
 {
-  id: party.id,
-  globalId: party.global_id,
+  id: party.id as String,
+  globalId: party.global_id as String,
   partyType: party.party_type,
   firstName: party.first_name,
   lastName: party.last_name,
