@@ -18,12 +18,12 @@
           SELECT *
           FROM global_parties
           WHERE
-            (:globalId::uuid IS NULL OR global_id = :globalId::uuid)
-            AND (:partyType IS NULL OR party_type = :partyType)
-            AND (:lastName IS NULL OR last_name = :lastName)
-            AND (:taxId IS NULL OR tax_id = :taxId)
+            (NULLIF(:globalId, '') IS NULL OR global_id = NULLIF(:globalId, '')::uuid)
+            AND (COALESCE(:partyType, '') = '' OR party_type = :partyType)
+            AND (COALESCE(:lastName, '') = '' OR last_name = :lastName)
+            AND (COALESCE(:taxId, '') = '' OR tax_id = :taxId)
           ORDER BY created_at DESC
-          LIMIT :limit::integer OFFSET :offset::integer
+          LIMIT CAST(COALESCE(:limit, '100') AS integer) OFFSET CAST(COALESCE(:offset, '0') AS integer)
         ]]></db:sql>
         <db:input-parameters><![CDATA[#[payload default {}]]]></db:input-parameters>
       </db:select>
@@ -37,21 +37,43 @@ if (payload is Array) payload else [payload] default []]]></ee:set-variable>
         </ee:variables>
       </ee:transform>
 
-      <choice doc:name="Has Parties?">
-        <when expression="#[sizeOf(vars.parties) > 0]">
-          <db:select config-ref="Database_Config" doc:name="Select External IDs">
-            <db:sql><![CDATA[
-              SELECT party_global_id, external_system, external_value
-              FROM external_ids
-              WHERE party_global_id = ANY(:partyGlobalIds::uuid[])
-            ]]></db:sql>
-            <db:input-parameters><![CDATA[#[%dw 2.0
+      <ee:transform doc:name="Store Party Global IDs">
+        <ee:variables>
+          <ee:set-variable variableName="partyGlobalIdsList"><![CDATA[%dw 2.0
 output application/java
 ---
-{
-  partyGlobalIds: vars.parties map ((party) -> party.global_id)
-}]]]></db:input-parameters>
-          </db:select>
+vars.parties map ((party) -> party.global_id)]]></ee:set-variable>
+          <ee:set-variable variableName="externalIds"><![CDATA[%dw 2.0
+output application/java
+---
+[]]]></ee:set-variable>
+        </ee:variables>
+      </ee:transform>
+
+      <choice doc:name="Has Parties?">
+        <when expression="#[sizeOf(vars.parties) > 0]">
+          <foreach collection="#[vars.partyGlobalIdsList]" doc:name="For Each Party Global ID">
+            <db:select config-ref="Database_Config" doc:name="Select External IDs">
+              <db:sql><![CDATA[
+                SELECT global_id, external_system, external_value
+                FROM external_ids
+                WHERE global_id = :partyGlobalId::uuid
+                  AND entity_type = 'party'
+              ]]></db:sql>
+              <db:input-parameters><![CDATA[#[{
+                partyGlobalId: payload as String
+              }]]]></db:input-parameters>
+            </db:select>
+            <ee:transform doc:name="Collect External IDs">
+              <ee:variables>
+                <ee:set-variable variableName="externalIds"><![CDATA[%dw 2.0
+output application/java
+---
+if (vars.externalIds == null) payload else vars.externalIds ++ payload]]></ee:set-variable>
+              </ee:variables>
+            </ee:transform>
+          </foreach>
+          <set-payload value="#[vars.externalIds default []]" doc:name="Set External IDs Payload"/>
         </when>
         <otherwise>
           <set-payload value="#[[]]" doc:name="Set Empty Array"/>
@@ -64,7 +86,7 @@ output application/java
 output application/json
 var parties = vars.parties
 var externalIds = payload
-var externalIdsByParty = externalIds groupBy $.party_global_id
+var externalIdsByParty = externalIds groupBy $.global_id
 ---
 parties map ((party) -> {
   id: party.id as String,
@@ -116,10 +138,16 @@ output application/json
       <ee:message>
         <ee:set-payload><![CDATA[%dw 2.0
 output application/java
+fun normalizePartyType(pt) = 
+  if (pt == null) "Individual"
+  else if ((pt as String default "") == "") "Individual"
+  else if (pt as String == "Individual" or pt as String == "individual" or pt as String == "INDIVIDUAL") "Individual"
+  else if (pt as String == "Organization" or pt as String == "organization" or pt as String == "ORGANIZATION") "Organization"
+  else pt as String
 ---
 {
   global_id: payload.globalId default null,
-  party_type: payload.partyType,
+  party_type: normalizePartyType(payload.partyType default null) default "Individual",
   first_name: payload.firstName default null,
   last_name: payload.lastName default null,
   middle_name: payload.middleName default null,
@@ -137,6 +165,34 @@ payload]]></ee:set-variable>
 output application/java
 --- payload.externalIds default []]]></ee:set-variable>
       </ee:variables>
+    </ee:transform>
+
+    <set-variable value="#[vars.partyData.tax_id]" variableName="taxId" doc:name="Store Tax ID" />
+    <set-variable value="#[vars.partyData.global_id]" variableName="globalId" doc:name="Store Global ID" />
+
+    <ee:transform doc:name="Prepare DB Parameters">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var data = vars.partyData
+fun ensurePartyType(pt) =
+  if (pt == null) "Individual"
+  else if ((pt as String default "") == "") "Individual"
+  else if (pt as String == "Individual" or pt as String == "individual" or pt as String == "INDIVIDUAL") "Individual"
+  else if (pt as String == "Organization" or pt as String == "organization" or pt as String == "ORGANIZATION") "Organization"
+  else pt as String
+---
+{
+  global_id: data.global_id,
+  party_type: ensurePartyType(data.party_type),
+  first_name: data.first_name,
+  last_name: data.last_name,
+  middle_name: data.middle_name,
+  organization_name: data.organization_name,
+  date_of_birth: data.date_of_birth,
+  tax_id: data.tax_id
+}]]></ee:set-payload>
+      </ee:message>
     </ee:transform>
 
     <try doc:name="Try">
@@ -160,33 +216,62 @@ output application/java
             date_of_birth = EXCLUDED.date_of_birth,
             tax_id = EXCLUDED.tax_id,
             updated_at = CURRENT_TIMESTAMP
-          RETURNING *
         ]]></db:sql>
-        <db:input-parameters><![CDATA[#[vars.partyData]]]></db:input-parameters>
+        <db:input-parameters><![CDATA[#[payload]]]></db:input-parameters>
       </db:insert>
+
+      <choice doc:name="Select Party by Identifier">
+        <when expression="#[vars.globalId != null or vars.taxId != null]">
+          <db:select config-ref="Database_Config" doc:name="Select Upserted Party by Identifier">
+            <db:sql><![CDATA[
+              SELECT *
+              FROM global_parties
+              WHERE (NULLIF(:globalId, '') IS NOT NULL AND global_id = NULLIF(:globalId, '')::uuid)
+                 OR (COALESCE(:taxId, '') != '' AND tax_id = :taxId)
+              ORDER BY updated_at DESC, created_at DESC
+              LIMIT 1
+            ]]></db:sql>
+            <db:input-parameters><![CDATA[#[{
+              globalId: if (vars.globalId != null) vars.globalId as String else "",
+              taxId: if (vars.taxId != null) vars.taxId as String else ""
+            }]]]></db:input-parameters>
+          </db:select>
+        </when>
+        <otherwise>
+          <db:select config-ref="Database_Config" doc:name="Select Last Upserted Party">
+            <db:sql><![CDATA[
+              SELECT *
+              FROM global_parties
+              ORDER BY updated_at DESC, created_at DESC
+              LIMIT 1
+            ]]></db:sql>
+          </db:select>
+        </otherwise>
+      </choice>
 
       <ee:transform doc:name="Store Party">
         <ee:variables>
           <ee:set-variable variableName="party"><![CDATA[%dw 2.0
 output application/java
 ---
-payload[0]]]></ee:set-variable>
+payload[0] default {}]]></ee:set-variable>
           <ee:set-variable variableName="globalId"><![CDATA[%dw 2.0
 output application/java
 ---
-payload[0].global_id]]></ee:set-variable>
+if (sizeOf(payload) > 0 and payload[0] != null) payload[0].global_id else null]]></ee:set-variable>
         </ee:variables>
       </ee:transform>
 
       <choice doc:name="Has External IDs?">
-        <when expression="#[sizeOf(vars.externalIds) > 0]">
+        <when expression="#[sizeOf(vars.externalIds) > 0 and vars.globalId != null]">
           <db:delete config-ref="Database_Config" doc:name="Delete Existing External IDs">
             <db:sql><![CDATA[
               DELETE FROM external_ids
-              WHERE party_global_id = :globalId::uuid
+              WHERE global_id = :globalId::uuid
+                AND entity_type = 'party'
             ]]></db:sql>
             <db:input-parameters><![CDATA[#[{
-              globalId: vars.globalId
+              globalId: vars.globalId as String
             }]]]></db:input-parameters>
           </db:delete>
 
@@ -196,7 +281,8 @@ payload[0].global_id]]></ee:set-variable>
 output application/java
 ---
 vars.externalIds map ((ext) -> {
-  party_global_id: vars.globalId,
+  global_id: vars.globalId as String,
+  entity_type: "party",
   external_system: ext.system,
   external_value: ext.value
 })]]></ee:set-payload>
@@ -207,14 +293,13 @@ vars.externalIds map ((ext) -> {
             <db:insert config-ref="Database_Config" doc:name="Insert External ID">
               <db:sql><![CDATA[
                 INSERT INTO external_ids (
-                  party_global_id, external_system, external_value
+                  global_id, entity_type, external_system, external_value
                 )
                 VALUES (
-                  :party_global_id::uuid, :external_system, :external_value
+                  :global_id::uuid, :entity_type, :external_system, :external_value
                 )
-                ON CONFLICT (party_global_id, external_system) DO UPDATE SET
-                  external_value = EXCLUDED.external_value
-                RETURNING *
+                ON CONFLICT (external_system, external_value, entity_type) DO UPDATE SET
+                  global_id = EXCLUDED.global_id
               ]]></db:sql>
               <db:input-parameters><![CDATA[#[payload]]]></db:input-parameters>
             </db:insert>
@@ -226,7 +311,8 @@ vars.externalIds map ((ext) -> {
         <db:sql><![CDATA[
           SELECT external_system, external_value
           FROM external_ids
-          WHERE party_global_id = :globalId::uuid
+          WHERE global_id = :globalId::uuid
+            AND entity_type = 'party'
         ]]></db:sql>
         <db:input-parameters><![CDATA[#[{
           globalId: vars.globalId
@@ -312,7 +398,8 @@ output application/java
             <db:sql><![CDATA[
               SELECT external_system, external_value
               FROM external_ids
-              WHERE party_global_id = :partyGlobalId::uuid
+              WHERE global_id = :partyGlobalId::uuid
+                AND entity_type = 'party'
             ]]></db:sql>
             <db:input-parameters><![CDATA[#[{
               partyGlobalId: vars.partyGlobalId
@@ -395,9 +482,10 @@ output application/json
         <db:sql><![CDATA[
           SELECT gp.*
           FROM global_parties gp
-          INNER JOIN external_ids ei ON gp.global_id = ei.party_global_id
+          INNER JOIN external_ids ei ON gp.global_id = ei.global_id
           WHERE ei.external_system = :externalSystem
             AND ei.external_value = :externalValue
+            AND ei.entity_type = 'party'
         ]]></db:sql>
         <db:input-parameters><![CDATA[#[%dw 2.0
 output application/java
@@ -423,7 +511,8 @@ output application/java
             <db:sql><![CDATA[
               SELECT external_system, external_value
               FROM external_ids
-              WHERE party_global_id = :partyGlobalId::uuid
+              WHERE global_id = :partyGlobalId::uuid
+                AND entity_type = 'party'
             ]]></db:sql>
             <db:input-parameters><![CDATA[#[%dw 2.0
 output application/java

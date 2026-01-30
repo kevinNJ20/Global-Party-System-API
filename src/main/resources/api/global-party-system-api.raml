@@ -27,6 +27,16 @@ types:
           properties:
             system: string
             value: string
+    example:
+      globalId: "550e8400-e29b-41d4-a716-446655440000"
+      partyType: "Individual"
+      firstName: "John"
+      lastName: "Doe"
+      dateOfBirth: "1990-01-15"
+      taxId: "TAX-123456"
+      externalIds:
+        - system: "Salesforce"
+          value: "SF-001"
   ErrorResponse:
     type: object
     properties:
@@ -35,6 +45,10 @@ types:
         properties:
           code: string
           message: string
+    example:
+      error:
+        code: "NOT_FOUND"
+        message: "Party not found"
 
 traits:
   hasQueryParam:
@@ -80,6 +94,16 @@ traits:
     body:
       application/json:
         type: Party
+        example:
+          globalId: "550e8400-e29b-41d4-a716-446655440000"
+          partyType: "Individual"
+          firstName: "John"
+          lastName: "Doe"
+          dateOfBirth: "1990-01-15"
+          taxId: "TAX-123456"
+          externalIds:
+            - system: "Salesforce"
+              value: "SF-001"
     responses:
       200:
         body:
@@ -120,6 +144,10 @@ traits:
               properties:
                 system: string
                 value: string
+          example:
+            externalId:
+              system: "Salesforce"
+              value: "SF-001"
       responses:
         200:
           body:

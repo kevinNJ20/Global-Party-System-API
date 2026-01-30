@@ -108,9 +108,10 @@ output application/json
 output application/java
 ---
 {
-  globalId: attributes.queryParams.globalId default null,
-  partyType: attributes.queryParams.partyType default null,
-  lastName: attributes.queryParams.lastName default null,
+  globalId: attributes.queryParams.globalId default "",
+  partyType: attributes.queryParams.partyType default "",
+  lastName: attributes.queryParams.lastName default "",
+  taxId: attributes.queryParams.taxId default "",
   limit: (attributes.queryParams.limit as Number default 100) as String,
   offset: (attributes.queryParams.offset as Number default 0) as String
 }]]></ee:set-payload>
