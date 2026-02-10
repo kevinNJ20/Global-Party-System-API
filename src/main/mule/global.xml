@@ -21,7 +21,7 @@ http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/m
 	<global-property doc:name="Global Property" doc:id="46e78b88-87cb-4891-b1ff-aac9f7ba55e2" name="exchange.maven.restConnect.skip" value="true" />
 	<apikit:config outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" doc:name="Router" doc:id="8dfcc381-d3df-43ed-9d52-6ddacd390e4a" name="global-party-system-api-config" api="global-party-system-api.raml" />
 	<db:config name="Database_Config" doc:name="Database Config" doc:id="4af2992f-73f2-4ed8-a2cd-10f27293434e" >
-		<db:generic-connection url="jdbc:postgresql://aws-1-eu-west-1.pooler.supabase.com:5432/postgres" driverClassName="org.postgresql.Driver" user="postgres.vvfdezdptopljymzoivz" password="Jake902479%" />
+		<db:generic-connection url="${supabase.db.url}" driverClassName="org.postgresql.Driver" user="${supabase.db.user}" password="${supabase.db.password}" />
 	</db:config>
 
 
