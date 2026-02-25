@@ -13,6 +13,7 @@
   <!-- GET /parties - Business Logic Flow -->
   <flow name="get-parties-business-logic" doc:name="get-parties-business-logic">
     <try doc:name="Try">
+      <logger level="INFO" message="#['GET parties - limit: ' ++ ((payload.limit default '100') as String) ++ ', offset: ' ++ ((payload.offset default '0') as String)]" doc:name="Log request"/>
       <db:select config-ref="Database_Config" doc:name="Select Global Parties">
         <db:sql><![CDATA[
           SELECT *
@@ -108,10 +109,12 @@ parties map ((party) -> {
         </ee:message>
       </ee:transform>
 
+      <logger level="INFO" message="#['GET parties success - count: ' ++ sizeOf(payload)]" doc:name="Log success"/>
       <set-variable value="200" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
       
       <error-handler>
         <on-error-propagate type="*" enableNotifications="true" logException="true" doc:name="Error Handler">
+          <logger level="ERROR" message="#['GET parties failed - error: ' ++ (error.description default 'unknown')]" doc:name="Log error"/>
           <ee:transform doc:name="Transform Error">
             <ee:message>
               <ee:set-payload><![CDATA[%dw 2.0
@@ -134,6 +137,7 @@ output application/json
 
   <!-- POST /parties - Business Logic Flow -->
   <flow name="upsert-party-business-logic" doc:name="upsert-party-business-logic">
+    <logger level="INFO" message="#['POST upsert party - partyType: ' ++ (payload.partyType default 'n/a') ++ ', firstName: ' ++ (payload.firstName default '') ++ ', lastName: ' ++ (payload.lastName default '')]" doc:name="Log request"/>
     <ee:transform doc:name="Transform Request to DB Format">
       <ee:message>
         <ee:set-payload><![CDATA[%dw 2.0
@@ -346,10 +350,12 @@ var externalIds = payload
         </ee:message>
       </ee:transform>
 
+      <logger level="INFO" message="#['POST upsert party success - globalId: ' ++ (payload.globalId default 'n/a')]" doc:name="Log success"/>
       <set-variable value="#[if(vars.partyData.global_id == null) 201 else 200]" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
       
       <error-handler>
         <on-error-propagate type="*" enableNotifications="true" logException="true" doc:name="Error Handler">
+          <logger level="ERROR" message="#['POST upsert party failed - error: ' ++ (error.description default 'unknown')]" doc:name="Log error"/>
           <ee:transform doc:name="Transform Error">
             <ee:message>
               <ee:set-payload><![CDATA[%dw 2.0
@@ -373,6 +379,7 @@ output application/json
   <!-- GET /parties/{partyGlobalId} - Business Logic Flow -->
   <flow name="get-party-by-global-id-business-logic" doc:name="get-party-by-global-id-business-logic">
     <try doc:name="Try">
+      <logger level="INFO" message="#['GET party by globalId - partyGlobalId: ' ++ (vars.partyGlobalId default 'n/a')]" doc:name="Log request"/>
       <db:select config-ref="Database_Config" doc:name="Select Party by Global ID">
         <db:sql><![CDATA[
           SELECT *
@@ -432,9 +439,11 @@ var externalIds = payload
 }]]></ee:set-payload>
             </ee:message>
           </ee:transform>
+          <logger level="INFO" message="#['GET party by globalId success - partyGlobalId: ' ++ (vars.partyGlobalId default 'n/a')]" doc:name="Log success"/>
           <set-variable value="200" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
         </when>
         <otherwise>
+          <logger level="WARN" message="#['GET party by globalId not found - partyGlobalId: ' ++ (vars.partyGlobalId default 'n/a')]" doc:name="Log not found"/>
           <ee:transform doc:name="Error Response">
             <ee:message>
               <ee:set-payload><![CDATA[%dw 2.0
@@ -455,6 +464,7 @@ output application/json
       
       <error-handler>
         <on-error-propagate type="*" enableNotifications="true" logException="true" doc:name="Error Handler">
+          <logger level="ERROR" message="#['GET party by globalId failed - partyGlobalId: ' ++ (vars.partyGlobalId default 'n/a') ++ ', error: ' ++ (error.description default 'unknown')]" doc:name="Log error"/>
           <ee:transform doc:name="Transform Error">
             <ee:message>
               <ee:set-payload><![CDATA[%dw 2.0
@@ -478,6 +488,7 @@ output application/json
   <!-- POST /parties/lookup - Business Logic Flow -->
   <flow name="lookup-party-business-logic" doc:name="lookup-party-business-logic">
     <try doc:name="Try">
+      <logger level="INFO" message="#['POST parties lookup - system: ' ++ ((payload.externalId default {}).system default 'n/a') ++ ', value: ' ++ ((payload.externalId default {}).value default 'n/a')]" doc:name="Log request"/>
       <db:select config-ref="Database_Config" doc:name="Lookup Party by External ID">
         <db:sql><![CDATA[
           SELECT gp.*
@@ -548,9 +559,11 @@ var externalIds = payload
 }]]></ee:set-payload>
             </ee:message>
           </ee:transform>
+          <logger level="INFO" message="POST parties lookup success" doc:name="Log success"/>
           <set-variable value="200" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
         </when>
         <otherwise>
+          <logger level="WARN" message="POST parties lookup not found" doc:name="Log not found"/>
           <ee:transform doc:name="Error Response">
             <ee:message>
               <ee:set-payload><![CDATA[%dw 2.0
@@ -571,6 +584,7 @@ output application/json
       
       <error-handler>
         <on-error-propagate type="*" enableNotifications="true" logException="true" doc:name="Error Handler">
+          <logger level="ERROR" message="#['POST parties lookup failed - error: ' ++ (error.description default 'unknown')]" doc:name="Log error"/>
           <ee:transform doc:name="Transform Error">
             <ee:message>
               <ee:set-payload><![CDATA[%dw 2.0
