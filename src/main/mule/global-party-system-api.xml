@@ -199,12 +199,17 @@ fun ensurePartyType(pt) =
     <try doc:name="Try">
       <db:insert config-ref="Database_Config" doc:name="Upsert Party">
         <db:sql><![CDATA[
+          WITH existing_party AS (
+            SELECT global_id FROM global_parties
+            WHERE :global_id IS NULL AND tax_id = :tax_id
+            LIMIT 1
+          )
           INSERT INTO global_parties (
             global_id, party_type, first_name, last_name, middle_name,
             organization_name, date_of_birth, tax_id
           )
           VALUES (
-            COALESCE(:global_id::uuid, gen_random_uuid()),
+            COALESCE(:global_id::uuid, (SELECT global_id FROM existing_party), gen_random_uuid()),
             :party_type, :first_name, :last_name, :middle_name,
             :organization_name, :date_of_birth::date, :tax_id
           )
