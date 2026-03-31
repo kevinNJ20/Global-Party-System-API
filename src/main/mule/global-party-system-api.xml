@@ -346,8 +346,7 @@ var externalIds = payload
 }]]></ee:set-payload>
         </ee:message>
       </ee:transform>
-
-      <logger level="INFO" message="#['POST upsert party success - globalId: ' ++ (payload.globalId default 'n/a')]" doc:name="Log success"/>
+			<logger level="INFO" message="#['POST upsert party success - globalId: ' ++ (payload.globalId default 'n/a')]" doc:name="Log success"/>
       <set-variable value="#[if(vars.partyData.global_id == null) 201 else 200]" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
       
       <error-handler>
