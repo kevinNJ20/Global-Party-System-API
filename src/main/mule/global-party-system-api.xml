@@ -138,7 +138,7 @@ output application/json
   <!-- POST /parties - Business Logic Flow -->
   <flow name="upsert-party-business-logic" doc:name="upsert-party-business-logic">
     <logger level="INFO" message="#['POST upsert party - partyType: ' ++ (payload.partyType default 'n/a') ++ ', firstName: ' ++ (payload.firstName default '') ++ ', lastName: ' ++ (payload.lastName default '')]" doc:name="Log request"/>
-    <ee:transform doc:name="Transform Request to DB Format">
+    <ee:transform doc:name="Transform Request to DB Format" doc:id="524003b7-d0e6-413e-8b88-6fc8b3c61e9e">
       <ee:message>
         <ee:set-payload><![CDATA[%dw 2.0
 output application/java
@@ -161,17 +161,14 @@ fun normalizePartyType(pt) =
 }]]></ee:set-payload>
       </ee:message>
       <ee:variables>
-        <ee:set-variable variableName="partyData"><![CDATA[%dw 2.0
-output application/java
----
-payload]]></ee:set-variable>
         <ee:set-variable variableName="externalIds"><![CDATA[%dw 2.0
 output application/java
 --- payload.externalIds default []]]></ee:set-variable>
       </ee:variables>
     </ee:transform>
 
-    <set-variable value="#[vars.partyData.tax_id]" variableName="taxId" doc:name="Store Tax ID" />
+    <set-variable value="#[%dw 2.0&#10;output application/java&#10;---&#10;payload]" doc:name="Store Party Data" doc:id="751c8232-1d30-4e1a-98a9-a30ddfd87c6e" variableName="partyData"/>
+		<set-variable value="#[vars.partyData.tax_id]" variableName="taxId" doc:name="Store Tax ID" />
     <set-variable value="#[vars.partyData.global_id]" variableName="globalId" doc:name="Store Global ID" />
 
     <ee:transform doc:name="Prepare DB Parameters">
