@@ -196,22 +196,46 @@ fun ensurePartyType(pt) =
       </ee:message>
     </ee:transform>
 
+    <db:select config-ref="Database_Config" doc:name="Find Existing Party by Tax ID">
+      <db:sql><![CDATA[
+        SELECT global_id FROM global_parties
+        WHERE tax_id = :tax_id
+        LIMIT 1
+      ]]></db:sql>
+      <db:input-parameters><![CDATA[#[{tax_id: payload.tax_id}]]]></db:input-parameters>
+    </db:select>
+
+    <ee:transform doc:name="Resolve Global ID">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var existingGlobalId = if (!isEmpty(payload)) payload[0].global_id else null
+var resolvedGlobalId = vars.partyData.global_id default existingGlobalId
+---
+{
+  global_id: resolvedGlobalId,
+  party_type: vars.partyData.party_type,
+  first_name: vars.partyData.first_name,
+  last_name: vars.partyData.last_name,
+  middle_name: vars.partyData.middle_name,
+  organization_name: vars.partyData.organization_name,
+  date_of_birth: vars.partyData.date_of_birth,
+  tax_id: vars.partyData.tax_id
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+
     <try doc:name="Try">
       <db:insert config-ref="Database_Config" doc:name="Upsert Party">
         <db:sql><![CDATA[
-          WITH existing_party AS (
-            SELECT global_id FROM global_parties
-            WHERE :global_id IS NULL AND tax_id = :tax_id
-            LIMIT 1
-          )
           INSERT INTO global_parties (
             global_id, party_type, first_name, last_name, middle_name,
             organization_name, date_of_birth, tax_id
           )
           VALUES (
-            COALESCE(:global_id::uuid, (SELECT global_id FROM existing_party), gen_random_uuid()),
+            COALESCE(CAST(:global_id AS uuid), gen_random_uuid()),
             :party_type, :first_name, :last_name, :middle_name,
-            :organization_name, :date_of_birth::date, :tax_id
+            :organization_name, CAST(:date_of_birth AS date), :tax_id
           )
           ON CONFLICT (global_id) DO UPDATE SET
             party_type = EXCLUDED.party_type,
