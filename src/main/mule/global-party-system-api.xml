@@ -227,7 +227,7 @@ var resolvedGlobalId = vars.partyData.global_id default existingGlobalId
     </ee:transform>
 
     <try doc:name="Try">
-      <!-- [STUDIO:"Upsert Party"]<db:insert config-ref="Database_Config" doc:name="Upsert Party">
+      <db:insert config-ref="Database_Config" doc:name="Upsert Party">
         <db:sql><![CDATA[
           INSERT INTO global_parties (
             global_id, party_type, first_name, last_name, middle_name,
@@ -247,9 +247,9 @@ var resolvedGlobalId = vars.partyData.global_id default existingGlobalId
             date_of_birth = EXCLUDED.date_of_birth,
             tax_id = EXCLUDED.tax_id,
             updated_at = CURRENT_TIMESTAMP
-        &#93;&#93;></db:sql>
-        <db:input-parameters><![CDATA[#[payload&#93;&#93;&#93;></db:input-parameters>
-      </db:insert> [STUDIO] -->
+        ]]></db:sql>
+        <db:input-parameters><![CDATA[#[payload]]]></db:input-parameters>
+      </db:insert>
 
       <choice doc:name="Select Party by Identifier">
         <when expression="#[vars.globalId != null or vars.taxId != null]">
@@ -279,8 +279,9 @@ var resolvedGlobalId = vars.partyData.global_id default existingGlobalId
           </db:select>
         </otherwise>
       </choice>
-			<validation:is-true doc:name="Is data retrieved" doc:id="f00f8c49-2a55-460f-a02d-b5ce39d92c7e" expression="#[sizeOf(payload) &gt;0]" message="No data retrieved"/>
-			<ee:transform doc:name="Store Party">
+			<try doc:name="Try" doc:id="7330e3d7-dc07-4947-9508-3a339b0eb2ac" >
+				<validation:is-true doc:name="Is data retrieved" doc:id="f00f8c49-2a55-460f-a02d-b5ce39d92c7e" expression="#[sizeOf(payload) &gt;0]" message="No data retrieved" />
+				<ee:transform doc:name="Store Party">
         <ee:variables>
           <ee:set-variable variableName="party"><![CDATA[%dw 2.0
 output application/java
@@ -292,8 +293,8 @@ output application/java
 if (sizeOf(payload) > 0 and payload[0] != null) payload[0].global_id else null]]></ee:set-variable>
         </ee:variables>
       </ee:transform>
-			<flow-ref doc:name="to processexternalIds" doc:id="7152e45b-ffaa-49bb-9384-d130dd6b0b0e" name="processexternalIds" />
-			<db:select config-ref="Database_Config" doc:name="Get External IDs">
+				<flow-ref doc:name="to processexternalIds" doc:id="7152e45b-ffaa-49bb-9384-d130dd6b0b0e" name="processexternalIds" />
+				<db:select config-ref="Database_Config" doc:name="Get External IDs">
         <db:sql><![CDATA[
           SELECT external_system, external_value
           FROM external_ids
@@ -304,7 +305,7 @@ if (sizeOf(payload) > 0 and payload[0] != null) payload[0].global_id else null]]
           globalId: vars.globalId
         }]]]></db:input-parameters>
       </db:select>
-			<ee:transform doc:name="Transform Response">
+				<ee:transform doc:name="Transform Response">
         <ee:message>
           <ee:set-payload><![CDATA[%dw 2.0
 output application/json
@@ -330,8 +331,14 @@ var externalIds = payload
 }]]></ee:set-payload>
         </ee:message>
       </ee:transform>
-			<logger level="INFO" message="#['POST upsert party success - globalId: ' ++ (payload.globalId default 'n/a')]" doc:name="Log success" />
-			<set-variable value="#[if(vars.partyData.global_id == null) 201 else 200]" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus" />
+				<logger level="INFO" message="#['POST upsert party success - globalId: ' ++ (payload.globalId default 'n/a')]" doc:name="Log success" />
+				<set-variable value="#[if(vars.partyData.global_id == null) 201 else 200]" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus" />
+				<error-handler >
+					<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="074a7b0e-c01e-408e-b3fb-a79dcb4d919e" >
+						<logger level="INFO" doc:name="Log error" doc:id="81327bdd-8f13-4cff-87eb-faf6f032c071" message="Error syncing customer: #[error.description]"/>
+					</on-error-propagate>
+				</error-handler>
+			</try>
       
       <error-handler>
         <on-error-propagate type="*" enableNotifications="true" logException="true" doc:name="Error Handler">
