@@ -1,0 +1,4 @@
+%dw 2.0
+
+type auto_1e9cffb5_3244_4042_aad0_2e4f3d0659e8_Output_Variables_taxId = Any
+

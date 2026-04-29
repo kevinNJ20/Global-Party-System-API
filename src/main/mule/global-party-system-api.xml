@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+<mule xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+  xmlns="http://www.mulesoft.org/schema/mule/core"
   xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
   xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xmlns:http="http://www.mulesoft.org/schema/mule/http"
-	xmlns:db="http://www.mulesoft.org/schema/mule/db"
-      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      xmlns:db="http://www.mulesoft.org/schema/mule/db" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
       http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
 	http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-	http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
 
   <!-- GET /parties - Business Logic Flow -->
   <flow name="get-parties-business-logic" doc:name="get-parties-business-logic">
@@ -226,7 +227,7 @@ var resolvedGlobalId = vars.partyData.global_id default existingGlobalId
     </ee:transform>
 
     <try doc:name="Try">
-      <db:insert config-ref="Database_Config" doc:name="Upsert Party">
+      <!-- [STUDIO:"Upsert Party"]<db:insert config-ref="Database_Config" doc:name="Upsert Party">
         <db:sql><![CDATA[
           INSERT INTO global_parties (
             global_id, party_type, first_name, last_name, middle_name,
@@ -246,9 +247,9 @@ var resolvedGlobalId = vars.partyData.global_id default existingGlobalId
             date_of_birth = EXCLUDED.date_of_birth,
             tax_id = EXCLUDED.tax_id,
             updated_at = CURRENT_TIMESTAMP
-        ]]></db:sql>
-        <db:input-parameters><![CDATA[#[payload]]]></db:input-parameters>
-      </db:insert>
+        &#93;&#93;></db:sql>
+        <db:input-parameters><![CDATA[#[payload&#93;&#93;&#93;></db:input-parameters>
+      </db:insert> [STUDIO] -->
 
       <choice doc:name="Select Party by Identifier">
         <when expression="#[vars.globalId != null or vars.taxId != null]">
@@ -278,8 +279,8 @@ var resolvedGlobalId = vars.partyData.global_id default existingGlobalId
           </db:select>
         </otherwise>
       </choice>
-
-      <ee:transform doc:name="Store Party">
+			<validation:is-true doc:name="Is data retrieved" doc:id="f00f8c49-2a55-460f-a02d-b5ce39d92c7e" expression="#[sizeOf(payload) &gt;0]" message="No data retrieved"/>
+			<ee:transform doc:name="Store Party">
         <ee:variables>
           <ee:set-variable variableName="party"><![CDATA[%dw 2.0
 output application/java
@@ -291,53 +292,8 @@ output application/java
 if (sizeOf(payload) > 0 and payload[0] != null) payload[0].global_id else null]]></ee:set-variable>
         </ee:variables>
       </ee:transform>
-
-      <choice doc:name="Has External IDs?">
-        <when expression="#[sizeOf(vars.externalIds) > 0 and vars.globalId != null]">
-          <db:delete config-ref="Database_Config" doc:name="Delete Existing External IDs">
-            <db:sql><![CDATA[
-              DELETE FROM external_ids
-              WHERE global_id = :globalId::uuid
-                AND entity_type = 'party'
-            ]]></db:sql>
-            <db:input-parameters><![CDATA[#[{
-              globalId: vars.globalId as String
-            }]]]></db:input-parameters>
-          </db:delete>
-
-          <ee:transform doc:name="Transform External IDs for Insert">
-            <ee:message>
-              <ee:set-payload><![CDATA[%dw 2.0
-output application/java
----
-vars.externalIds map ((ext) -> {
-  global_id: vars.globalId as String,
-  entity_type: "party",
-  external_system: ext.system,
-  external_value: ext.value
-})]]></ee:set-payload>
-            </ee:message>
-          </ee:transform>
-
-          <foreach doc:name="Insert External IDs">
-            <db:insert config-ref="Database_Config" doc:name="Insert External ID">
-              <db:sql><![CDATA[
-                INSERT INTO external_ids (
-                  global_id, entity_type, external_system, external_value
-                )
-                VALUES (
-                  :global_id::uuid, :entity_type, :external_system, :external_value
-                )
-                ON CONFLICT (external_system, external_value, entity_type) DO UPDATE SET
-                  global_id = EXCLUDED.global_id
-              ]]></db:sql>
-              <db:input-parameters><![CDATA[#[payload]]]></db:input-parameters>
-            </db:insert>
-          </foreach>
-        </when>
-      </choice>
-
-      <db:select config-ref="Database_Config" doc:name="Get External IDs">
+			<flow-ref doc:name="to processexternalIds" doc:id="7152e45b-ffaa-49bb-9384-d130dd6b0b0e" name="processexternalIds" />
+			<db:select config-ref="Database_Config" doc:name="Get External IDs">
         <db:sql><![CDATA[
           SELECT external_system, external_value
           FROM external_ids
@@ -348,8 +304,7 @@ vars.externalIds map ((ext) -> {
           globalId: vars.globalId
         }]]]></db:input-parameters>
       </db:select>
-
-      <ee:transform doc:name="Transform Response">
+			<ee:transform doc:name="Transform Response">
         <ee:message>
           <ee:set-payload><![CDATA[%dw 2.0
 output application/json
@@ -375,8 +330,8 @@ var externalIds = payload
 }]]></ee:set-payload>
         </ee:message>
       </ee:transform>
-			<logger level="INFO" message="#['POST upsert party success - globalId: ' ++ (payload.globalId default 'n/a')]" doc:name="Log success"/>
-      <set-variable value="#[if(vars.partyData.global_id == null) 201 else 200]" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus"/>
+			<logger level="INFO" message="#['POST upsert party success - globalId: ' ++ (payload.globalId default 'n/a')]" doc:name="Log success" />
+			<set-variable value="#[if(vars.partyData.global_id == null) 201 else 200]" doc:name="httpStatus" doc:id="d3d4a356-1b30-4ea3-bf48-82e66c597694" variableName="httpStatus" />
       
       <error-handler>
         <on-error-propagate type="*" enableNotifications="true" logException="true" doc:name="Error Handler">
@@ -402,7 +357,51 @@ output application/json
   </flow>
 
   <!-- GET /parties/{partyGlobalId} - Business Logic Flow -->
-  <flow name="get-party-by-global-id-business-logic" doc:name="get-party-by-global-id-business-logic">
+	<sub-flow name="processexternalIds" doc:id="1e9cffb5-3244-4042-aad0-2e4f3d0659e8" >
+		<choice doc:name="Has External IDs?" doc:id="229c178f-6a1c-4ab6-a9f7-8d0198773e58" >
+			<when expression="#[sizeOf(vars.externalIds) &gt; 0 and vars.globalId != null]" >
+				<db:delete doc:name="Delete Existing External IDs" doc:id="43b50c15-b249-4196-8e49-a5b555aacb56" config-ref="Database_Config" >
+					<db:sql ><![CDATA[
+              DELETE FROM external_ids
+              WHERE global_id = :globalId::uuid
+                AND entity_type = 'party'
+            ]]></db:sql>
+					<db:input-parameters ><![CDATA[#[{
+              globalId: vars.globalId as String
+            }]]]></db:input-parameters>
+				</db:delete>
+				<ee:transform doc:name="Transform External IDs for Insert" doc:id="747d10cf-e8e2-456a-9eda-a11ea9c7feab" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+vars.externalIds map ((ext) -> {
+  global_id: vars.globalId as String,
+  entity_type: "party",
+  external_system: ext.system,
+  external_value: ext.value
+})]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<foreach doc:name="Insert External IDs" doc:id="7ea11630-7efd-485b-99b3-e910d46840bd" >
+					<db:insert doc:name="Insert External ID" doc:id="20cc273b-cc2f-41a1-9211-1dc042ab6228" config-ref="Database_Config" >
+						<db:sql ><![CDATA[
+                INSERT INTO external_ids (
+                  global_id, entity_type, external_system, external_value
+                )
+                VALUES (
+                  :global_id::uuid, :entity_type, :external_system, :external_value
+                )
+                ON CONFLICT (external_system, external_value, entity_type) DO UPDATE SET
+                  global_id = EXCLUDED.global_id
+              ]]></db:sql>
+						<db:input-parameters ><![CDATA[#[payload]]]></db:input-parameters>
+					</db:insert>
+				</foreach>
+			</when>
+		</choice>
+	</sub-flow>
+	<flow name="get-party-by-global-id-business-logic" doc:name="get-party-by-global-id-business-logic">
     <try doc:name="Try">
       <logger level="INFO" message="#['GET party by globalId - partyGlobalId: ' ++ (vars.partyGlobalId default 'n/a')]" doc:name="Log request"/>
       <db:select config-ref="Database_Config" doc:name="Select Party by Global ID">
